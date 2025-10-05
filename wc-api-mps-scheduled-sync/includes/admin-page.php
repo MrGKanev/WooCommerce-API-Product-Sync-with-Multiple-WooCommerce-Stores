@@ -107,6 +107,8 @@ function wc_api_mps_scheduled_admin_page()
   }
 
   // Handle actions
+  wc_api_mps_scheduled_handle_reschedule();
+
   if (isset($_POST['run_sync_now']) && check_admin_referer('wc_api_mps_manual_sync')) {
     wc_api_mps_scheduled_trigger_sync();
     echo '<div class="notice notice-success"><p>' . __('Manual sync completed.', 'wc-api-mps-scheduled') . '</p></div>';
@@ -361,6 +363,11 @@ function wc_api_mps_scheduled_admin_page()
         </table>
       <?php endif; ?>
     </div>
+
+    <?php
+    // Show debug info if ?debug=1 is in URL
+    wc_api_mps_scheduled_debug_info();
+    ?>
   </div>
 <?php
 }

@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 /**
  * Get products that need syncing
  */
-function wc_api_mps_scheduled_get_products($sync_type, $limit = 100)
+function wc_api_mps_scheduled_get_products($sync_type, $limit = 1)
 {
   $products = array();
 

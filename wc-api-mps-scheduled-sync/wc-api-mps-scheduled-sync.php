@@ -26,6 +26,7 @@ require_once WC_API_MPS_SCHEDULED_PATH . 'includes/time-manager.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/logger.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/admin-page.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/hooks.php';
+require_once WC_API_MPS_SCHEDULED_PATH . 'includes/debug-helper.php';
 
 // Register activation/deactivation
 register_activation_hook(__FILE__, 'wc_api_mps_scheduled_activate');
@@ -37,4 +38,13 @@ add_action('admin_init', 'wc_api_mps_scheduled_register_settings');
 
 // Initialize cron
 add_action('wc_api_mps_scheduled_sync_check', 'wc_api_mps_scheduled_run_sync');
+
+// Always register the custom interval (not just on activation)
 add_filter('cron_schedules', 'wc_api_mps_scheduled_add_interval');
+
+// Ensure cron is scheduled on every page load (lightweight check)
+add_action('init', function () {
+  if (!wp_next_scheduled('wc_api_mps_scheduled_sync_check')) {
+    wp_schedule_event(time(), 'every_15_minutes', 'wc_api_mps_scheduled_sync_check');
+  }
+});
