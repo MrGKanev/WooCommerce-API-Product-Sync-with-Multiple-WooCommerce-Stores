@@ -54,6 +54,11 @@ function wc_api_mps_scheduled_run_sync()
 
   foreach ($products_to_process as $product_id) {
     try {
+      // Get product SKU for logging
+      $product = wc_get_product($product_id);
+      $product_sku = $product ? $product->get_sku() : '';
+      $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
+
       // Run sync using main plugin function
       wc_api_mps_integration($product_id, $stores, $sync_type);
 
@@ -71,10 +76,13 @@ function wc_api_mps_scheduled_run_sync()
       }
 
       $success_count++;
-      wc_api_mps_scheduled_log(sprintf('Synced product ID: %d (%s)', $product_id, $sync_type));
+      wc_api_mps_scheduled_log(sprintf('✓ Synced %s (%s)', $product_identifier, $sync_type));
     } catch (Exception $e) {
       $error_count++;
-      wc_api_mps_scheduled_log(sprintf('Error syncing product ID %d: %s', $product_id, $e->getMessage()));
+      $product = wc_get_product($product_id);
+      $product_sku = $product ? $product->get_sku() : '';
+      $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
+      wc_api_mps_scheduled_log(sprintf('✗ Error syncing %s: %s', $product_identifier, $e->getMessage()));
     }
 
     // Prevent timeouts
