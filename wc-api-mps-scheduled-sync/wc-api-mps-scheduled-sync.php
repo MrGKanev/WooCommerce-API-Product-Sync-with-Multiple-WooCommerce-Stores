@@ -329,14 +329,40 @@ class WC_API_MPS_Scheduled_Sync
    */
   public function add_admin_menu()
   {
+    // Try to add as submenu under the main plugin first
     add_submenu_page(
-      'wc_api_mps',
-      __('Scheduled Sync', 'wc-api-mps-scheduled'),
-      __('Scheduled Sync', 'wc-api-mps-scheduled'),
-      'manage_options',
-      'wc_api_mps_scheduled_sync',
-      array($this, 'admin_page')
+      'wc_api_mps',                                    // Parent slug from main plugin
+      __('Scheduled Sync', 'wc-api-mps-scheduled'),    // Page title
+      __('Scheduled Sync', 'wc-api-mps-scheduled'),    // Menu title
+      'manage_options',                                 // Capability
+      'wc-api-mps-scheduled-sync',                     // Menu slug
+      array($this, 'admin_page')                       // Callback function
     );
+  }
+
+  /**
+   * Add admin notice if main plugin not active
+   */
+  public function check_main_plugin()
+  {
+    if (!function_exists('wc_api_mps_integration')) {
+      add_action('admin_notices', array($this, 'main_plugin_notice'));
+    }
+  }
+
+  /**
+   * Show notice if main plugin not active
+   */
+  public function main_plugin_notice()
+  {
+?>
+    <div class="notice notice-error">
+      <p>
+        <strong><?php _e('WooCommerce Product Sync - Scheduled Sync', 'wc-api-mps-scheduled'); ?></strong>
+        <?php _e('requires the WooCommerce API Product Sync plugin to be installed and activated.', 'wc-api-mps-scheduled'); ?>
+      </p>
+    </div>
+  <?php
   }
 
   /**
@@ -382,7 +408,7 @@ class WC_API_MPS_Scheduled_Sync
     $sync_type = $this->get_sync_type_for_time();
     $products_pending = $this->get_products_needing_sync($sync_type);
 
-?>
+  ?>
     <div class="wrap">
       <h1><?php _e('Scheduled Sync Status', 'wc-api-mps-scheduled'); ?></h1>
 
