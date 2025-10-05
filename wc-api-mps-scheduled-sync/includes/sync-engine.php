@@ -19,12 +19,30 @@ function wc_api_mps_scheduled_run_sync()
     return;
   }
 
-  // Get stores
-  $stores = get_option('wc_api_mps_stores');
-  if (!$stores || !is_array($stores)) {
+  // Get all stores
+  $all_stores = get_option('wc_api_mps_stores');
+  if (!$all_stores || !is_array($all_stores)) {
     wc_api_mps_scheduled_log('No stores configured. Skipping.');
     return;
   }
+
+  // Get selected stores for scheduled sync
+  $selected_store_urls = get_option('wc_api_mps_cron_selected_stores', array());
+
+  // Filter to only selected stores
+  $stores = array();
+  foreach ($selected_store_urls as $store_url) {
+    if (isset($all_stores[$store_url]) && $all_stores[$store_url]['status']) {
+      $stores[$store_url] = $all_stores[$store_url];
+    }
+  }
+
+  if (empty($stores)) {
+    wc_api_mps_scheduled_log('No active stores selected for scheduled sync. Please select stores in settings.');
+    return;
+  }
+
+  wc_api_mps_scheduled_log(sprintf('Syncing to %d selected store(s): %s', count($stores), implode(', ', array_keys($stores))));
 
   // Determine sync type and batch size
   $sync_type = wc_api_mps_scheduled_get_sync_type();
@@ -59,7 +77,7 @@ function wc_api_mps_scheduled_run_sync()
       $product_sku = $product ? $product->get_sku() : '';
       $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
 
-      // Run sync using main plugin function
+      // Run sync using main plugin function (with selected stores only)
       wc_api_mps_integration($product_id, $stores, $sync_type);
 
       // Mark as synced
