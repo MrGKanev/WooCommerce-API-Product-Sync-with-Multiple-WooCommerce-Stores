@@ -28,8 +28,11 @@ class WC_API_MPS_Scheduled_Sync
     // Add cron action
     add_action($this->cron_hook, array($this, 'run_scheduled_sync'));
 
-    // Add admin menu
-    add_action('admin_menu', array($this, 'add_admin_menu'));
+    // Add admin menu - priority 100 to ensure it loads after main plugin (which uses 20)
+    add_action('admin_menu', array($this, 'add_admin_menu'), 100);
+
+    // Check if main plugin is active
+    add_action('admin_init', array($this, 'check_main_plugin'));
 
     // Add settings
     add_action('admin_init', array($this, 'register_settings'));
@@ -186,8 +189,9 @@ class WC_API_MPS_Scheduled_Sync
 
   /**
    * Get products that need syncing based on sync type
+   * Optimized with limits to prevent timeouts
    */
-  private function get_products_needing_sync($sync_type = 'full_product')
+  private function get_products_needing_sync($sync_type = 'full_product', $limit = 25)
   {
     $products = array();
 
@@ -195,9 +199,11 @@ class WC_API_MPS_Scheduled_Sync
       // Off-peak: Get products that need full sync
       $args = array(
         'post_type'      => 'product',
-        'posts_per_page' => -1,
+        'posts_per_page' => $limit,  // LIMIT added
         'post_status'    => 'publish',
         'fields'         => 'ids',
+        'orderby'        => 'modified',
+        'order'          => 'DESC',
         'meta_query'     => array(
           'relation' => 'OR',
           array(
@@ -220,30 +226,17 @@ class WC_API_MPS_Scheduled_Sync
       // Peak hours: Get products with recent stock/price changes
       $args = array(
         'post_type'      => 'product',
-        'posts_per_page' => -1,
+        'posts_per_page' => $limit,  // LIMIT added
         'post_status'    => 'publish',
         'fields'         => 'ids',
+        'orderby'        => 'modified',
+        'order'          => 'DESC',
         'meta_query'     => array(
           'relation' => 'OR',
           array(
             'key'     => '_wc_api_mps_needs_light_sync',
             'value'   => '1',
             'compare' => '='
-          ),
-          // Products modified in last hour
-          array(
-            'relation' => 'AND',
-            array(
-              'key'     => '_wc_api_mps_last_sync_type',
-              'value'   => 'price_and_quantity',
-              'compare' => '!='
-            ),
-            array(
-              'key'     => '_edit_last',
-              'value'   => time() - 3600,
-              'compare' => '>',
-              'type'    => 'NUMERIC'
-            )
           )
         )
       );
@@ -255,48 +248,55 @@ class WC_API_MPS_Scheduled_Sync
       $products = $query->posts;
     }
 
-    // During off-peak, also check products modified in last 24 hours without full sync
-    if ($sync_type === 'full_product') {
-      $yesterday = time() - DAY_IN_SECONDS;
-      $args2 = array(
-        'post_type'      => 'product',
-        'posts_per_page' => -1,
-        'post_status'    => 'publish',
-        'fields'         => 'ids',
-        'date_query'     => array(
-          array(
-            'after'     => date('Y-m-d H:i:s', $yesterday),
-            'inclusive' => true
-          )
-        ),
-        'meta_query'     => array(
-          'relation' => 'AND',
-          array(
-            'key'     => 'wc_api_mps_disable_auto_sync',
-            'compare' => 'NOT EXISTS'
-          ),
-          array(
-            'relation' => 'OR',
-            array(
-              'key'     => '_wc_api_mps_last_sync_type',
-              'value'   => 'full_product',
-              'compare' => '!='
-            ),
-            array(
-              'key'     => '_wc_api_mps_last_sync_type',
-              'compare' => 'NOT EXISTS'
-            )
-          )
-        )
-      );
-
-      $query2 = new WP_Query($args2);
-      if ($query2->have_posts()) {
-        $products = array_merge($products, $query2->posts);
-      }
-    }
+    wp_reset_postdata();
 
     return array_unique($products);
+  }
+
+  /**
+   * Get count of products needing sync (faster query with caching)
+   */
+  private function get_products_needing_sync_count($sync_type = 'full_product')
+  {
+    // Check cache first (60 second cache)
+    $cache_key = 'wc_api_mps_pending_count_' . $sync_type;
+    $cached_count = get_transient($cache_key);
+
+    if ($cached_count !== false) {
+      return (int) $cached_count;
+    }
+
+    global $wpdb;
+
+    if ($sync_type === 'full_product') {
+      $count = $wpdb->get_var("
+                SELECT COUNT(DISTINCT p.ID) 
+                FROM {$wpdb->posts} p
+                LEFT JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_wc_api_mps_needs_full_sync'
+                LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_wc_api_mps_needs_sync'
+                LEFT JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_wc_api_mps_last_sync'
+                WHERE p.post_type = 'product' 
+                AND p.post_status = 'publish'
+                AND (pm1.meta_value = '1' OR pm2.meta_value = '1' OR pm3.meta_id IS NULL)
+            ");
+    } else {
+      $count = $wpdb->get_var("
+                SELECT COUNT(DISTINCT p.ID) 
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
+                WHERE p.post_type = 'product' 
+                AND p.post_status = 'publish'
+                AND pm.meta_key = '_wc_api_mps_needs_light_sync'
+                AND pm.meta_value = '1'
+            ");
+    }
+
+    $count = (int) $count;
+
+    // Cache for 60 seconds
+    set_transient($cache_key, $count, 60);
+
+    return $count;
   }
 
   /**
@@ -329,15 +329,41 @@ class WC_API_MPS_Scheduled_Sync
    */
   public function add_admin_menu()
   {
-    // Try to add as submenu under the main plugin first
-    add_submenu_page(
-      'wc_api_mps',                                    // Parent slug from main plugin
-      __('Scheduled Sync', 'wc-api-mps-scheduled'),    // Page title
-      __('Scheduled Sync', 'wc-api-mps-scheduled'),    // Menu title
-      'manage_options',                                 // Capability
-      'wc-api-mps-scheduled-sync',                     // Menu slug
-      array($this, 'admin_page')                       // Callback function
-    );
+    // Check if the parent menu exists
+    global $menu;
+    $parent_exists = false;
+
+    if (is_array($menu)) {
+      foreach ($menu as $item) {
+        if (isset($item[2]) && $item[2] === 'wc_api_mps') {
+          $parent_exists = true;
+          break;
+        }
+      }
+    }
+
+    // Add as submenu if parent exists, otherwise create standalone menu
+    if ($parent_exists) {
+      add_submenu_page(
+        'wc_api_mps',
+        __('Scheduled Sync', 'wc-api-mps-scheduled'),
+        __('Scheduled Sync', 'wc-api-mps-scheduled'),
+        'manage_options',
+        'wc-api-mps-scheduled-sync',
+        array($this, 'admin_page')
+      );
+    } else {
+      // Fallback: create standalone menu
+      add_menu_page(
+        __('Scheduled Sync', 'wc-api-mps-scheduled'),
+        __('Scheduled Sync', 'wc-api-mps-scheduled'),
+        'manage_options',
+        'wc-api-mps-scheduled-sync',
+        array($this, 'admin_page'),
+        'dashicons-update',
+        56
+      );
+    }
   }
 
   /**
@@ -362,7 +388,7 @@ class WC_API_MPS_Scheduled_Sync
         <?php _e('requires the WooCommerce API Product Sync plugin to be installed and activated.', 'wc-api-mps-scheduled'); ?>
       </p>
     </div>
-  <?php
+    <?php
   }
 
   /**
@@ -370,8 +396,17 @@ class WC_API_MPS_Scheduled_Sync
    */
   public function register_settings()
   {
-    register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_cron_batch_size');
-    register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_cron_batch_size_offpeak');
+    register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_cron_batch_size', array(
+      'type' => 'integer',
+      'default' => 5,
+      'sanitize_callback' => 'absint'
+    ));
+
+    register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_cron_batch_size_offpeak', array(
+      'type' => 'integer',
+      'default' => 20,
+      'sanitize_callback' => 'absint'
+    ));
   }
 
   /**
@@ -379,6 +414,30 @@ class WC_API_MPS_Scheduled_Sync
    */
   public function admin_page()
   {
+    // Increase PHP timeout for this page
+    @set_time_limit(60);
+
+    // Check user capabilities
+    if (!current_user_can('manage_options')) {
+      wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    // Check if main plugin is active
+    if (!function_exists('wc_api_mps_integration')) {
+    ?>
+      <div class="wrap">
+        <h1><?php _e('Scheduled Sync Status', 'wc-api-mps-scheduled'); ?></h1>
+        <div class="notice notice-error">
+          <p>
+            <strong><?php _e('Error:', 'wc-api-mps-scheduled'); ?></strong>
+            <?php _e('WooCommerce API Product Sync plugin is not active. Please install and activate it first.', 'wc-api-mps-scheduled'); ?>
+          </p>
+        </div>
+      </div>
+    <?php
+      return;
+    }
+
     // Handle manual sync trigger
     if (isset($_POST['run_sync_now']) && check_admin_referer('wc_api_mps_manual_sync')) {
       $this->run_scheduled_sync();
@@ -402,13 +461,23 @@ class WC_API_MPS_Scheduled_Sync
     $next_scheduled = wp_next_scheduled($this->cron_hook);
     $batch_size = get_option('wc_api_mps_cron_batch_size', 5);
     $batch_size_offpeak = get_option('wc_api_mps_cron_batch_size_offpeak', 20);
-    $logs = get_option($this->option_sync_log, array());
+
+    // Get logs with limit to prevent memory issues
+    $all_logs = get_option($this->option_sync_log, array());
+    $logs = is_array($all_logs) ? array_slice($all_logs, -50) : array(); // Last 50 only for display
 
     $is_off_peak = $this->is_off_peak_hours();
     $sync_type = $this->get_sync_type_for_time();
-    $products_pending = $this->get_products_needing_sync($sync_type);
 
-  ?>
+    // Use COUNT query instead of loading all products - much faster!
+    try {
+      $products_pending_count = $this->get_products_needing_sync_count($sync_type);
+    } catch (Exception $e) {
+      $products_pending_count = 0;
+      echo '<div class="notice notice-warning"><p>Unable to count pending products: ' . esc_html($e->getMessage()) . '</p></div>';
+    }
+
+    ?>
     <div class="wrap">
       <h1><?php _e('Scheduled Sync Status', 'wc-api-mps-scheduled'); ?></h1>
 
@@ -448,7 +517,7 @@ class WC_API_MPS_Scheduled_Sync
           <tr>
             <th><?php _e('Products Pending Sync:', 'wc-api-mps-scheduled'); ?></th>
             <td>
-              <strong><?php echo count($products_pending); ?></strong> products
+              <strong><?php echo $products_pending_count; ?></strong> products
               <?php if ($is_off_peak): ?>
                 (will sync <strong><?php echo $batch_size_offpeak; ?></strong> per run)
               <?php else: ?>
@@ -536,7 +605,7 @@ class WC_API_MPS_Scheduled_Sync
       </div>
 
       <div class="card">
-        <h2><?php _e('Recent Logs (Last 100 entries)', 'wc-api-mps-scheduled'); ?></h2>
+        <h2><?php _e('Recent Logs (Last 50 entries)', 'wc-api-mps-scheduled'); ?></h2>
         <?php if (empty($logs)): ?>
           <p><?php _e('No logs yet.', 'wc-api-mps-scheduled'); ?></p>
         <?php else: ?>
@@ -557,6 +626,16 @@ class WC_API_MPS_Scheduled_Sync
             </tbody>
           </table>
         <?php endif; ?>
+      </div>
+
+      <div class="card" style="background: #f0f0f1; border-left: 4px solid #72aee6;">
+        <h3>ℹ️ <?php _e('Performance Notes', 'wc-api-mps-scheduled'); ?></h3>
+        <ul>
+          <li><?php _e('Product counts are cached for 60 seconds to improve page load speed', 'wc-api-mps-scheduled'); ?></li>
+          <li><?php _e('The cron runs automatically every 15 minutes - you don\'t need to keep this page open', 'wc-api-mps-scheduled'); ?></li>
+          <li><?php _e('If this page times out, your server may need PHP timeout adjustments', 'wc-api-mps-scheduled'); ?></li>
+          <li><?php _e('The sync process works in the background regardless of this page loading', 'wc-api-mps-scheduled'); ?></li>
+        </ul>
       </div>
     </div>
 <?php
