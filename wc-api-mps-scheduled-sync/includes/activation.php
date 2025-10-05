@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Time-based sync management
+ * Plugin activation and deactivation
  */
 
 if (!defined('ABSPATH')) {
@@ -9,42 +9,43 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Check if current time is off-peak hours (12:00 AM - 6:30 AM)
+ * Activate plugin - schedule cron
  */
-function wc_api_mps_scheduled_is_off_peak()
+function wc_api_mps_scheduled_activate()
 {
-  $current_time = current_time('timestamp');
-  $current_hour = (int) date('G', $current_time);
-  $current_minute = (int) date('i', $current_time);
-
-  // Between 12:00 AM (midnight) and 6:30 AM
-  if ($current_hour < 6 || ($current_hour == 6 && $current_minute <= 30)) {
-    return true;
+  if (!wp_next_scheduled('wc_api_mps_scheduled_sync_check')) {
+    wp_schedule_event(time(), 'every_15_minutes', 'wc_api_mps_scheduled_sync_check');
   }
 
-  return false;
-}
+  // Set default options
+  if (false === get_option('wc_api_mps_cron_batch_size')) {
+    update_option('wc_api_mps_cron_batch_size', 5);
+  }
 
-/**
- * Get sync type based on time of day
- */
-function wc_api_mps_scheduled_get_sync_type()
-{
-  if (wc_api_mps_scheduled_is_off_peak()) {
-    return 'full_product';
-  } else {
-    return 'price_and_quantity';
+  if (false === get_option('wc_api_mps_cron_batch_size_offpeak')) {
+    update_option('wc_api_mps_cron_batch_size_offpeak', 20);
   }
 }
 
 /**
- * Get batch size based on time
+ * Deactivate plugin - clear cron
  */
-function wc_api_mps_scheduled_get_batch_size()
+function wc_api_mps_scheduled_deactivate()
 {
-  if (wc_api_mps_scheduled_is_off_peak()) {
-    return get_option('wc_api_mps_cron_batch_size_offpeak', 20);
-  } else {
-    return get_option('wc_api_mps_cron_batch_size', 5);
+  $timestamp = wp_next_scheduled('wc_api_mps_scheduled_sync_check');
+  if ($timestamp) {
+    wp_unschedule_event($timestamp, 'wc_api_mps_scheduled_sync_check');
   }
+}
+
+/**
+ * Add custom 15-minute cron interval
+ */
+function wc_api_mps_scheduled_add_interval($schedules)
+{
+  $schedules['every_15_minutes'] = array(
+    'interval' => 900,
+    'display'  => __('Every 15 Minutes', 'wc-api-mps-scheduled')
+  );
+  return $schedules;
 }
