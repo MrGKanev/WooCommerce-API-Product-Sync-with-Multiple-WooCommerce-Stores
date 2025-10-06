@@ -77,10 +77,10 @@ function wc_api_mps_scheduled_debug_info()
         <td>
           <?php
           $schedules = wp_get_schedules();
-          if (isset($schedules['every_15_minutes'])) {
-            echo '✅ every_15_minutes interval exists (' . $schedules['every_15_minutes']['interval'] . ' seconds)';
+          if (isset($schedules['every_5_minutes'])) {
+            echo '✅ every_5_minutes interval exists (' . $schedules['every_5_minutes']['interval'] . ' seconds)';
           } else {
-            echo '❌ every_15_minutes interval NOT registered';
+            echo '❌ every_5_minutes interval NOT registered';
           }
           ?>
         </td>
@@ -119,7 +119,7 @@ function wc_api_mps_scheduled_handle_reschedule()
     wp_clear_scheduled_hook('wc_api_mps_scheduled_sync_check');
 
     // Reschedule
-    wp_schedule_event(time(), 'every_15_minutes', 'wc_api_mps_scheduled_sync_check');
+    wp_schedule_event(time(), 'every_5_minutes', 'wc_api_mps_scheduled_sync_check');
 
     echo '<div class="notice notice-success"><p>✅ Cron rescheduled successfully!</p></div>';
 

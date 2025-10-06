@@ -54,16 +54,16 @@ WordPress cron is unreliable. Add a real cron job:
 crontab -e
 ```
 
-Add this line:
+Add this line (runs every 5 minutes):
 
 ```bash
-*/15 * * * * wget -q -O - https://yourdomain.com/wp-cron.php?doing_wp_cron >/dev/null 2>&1
+*/5 * * * * wget -q -O - https://yourdomain.com/wp-cron.php?doing_wp_cron >/dev/null 2>&1
 ```
 
 Or if you have WP-CLI:
 
 ```bash
-*/15 * * * * cd /path/to/wordpress && wp cron event run --due-now >/dev/null 2>&1
+*/5 * * * * cd /path/to/wordpress && wp cron event run --due-now >/dev/null 2>&1
 ```
 
 ## Verify It's Working
@@ -93,10 +93,23 @@ Check logs in the admin page:
 
 ## Sync Schedule
 
+By default, the plugin uses time-based scheduling:
+
 | Time | Sync Type | Products per Run | What Syncs |
 |------|-----------|------------------|------------|
 | 12:00 AM - 6:30 AM | Full | 20 | Everything |
 | 6:30 AM - 12:00 AM | Light | 5 | Price & quantity only |
+
+**Cron Frequency:** Every 5 minutes (12 times per hour)
+
+### Override Mode
+
+You can enable "Force Full Sync Mode" in settings to:
+
+- Run full product sync 24/7
+- Ignore time-based schedule
+- Useful for initial bulk sync or catching up
+- Uses off-peak batch size
 
 ## Troubleshooting
 
