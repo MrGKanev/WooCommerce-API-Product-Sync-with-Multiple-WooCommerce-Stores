@@ -30,8 +30,7 @@ function wc_api_mps_scheduled_is_off_peak()
  */
 function wc_api_mps_scheduled_get_sync_type()
 {
-  // Check if force full sync is enabled
-  $force_full_sync = get_option('wc_api_mps_cron_force_full_sync', 0);
+  $force_full_sync = get_option('wc_api_mps_force_full_sync', 0);
 
   if ($force_full_sync) {
     return 'full_product';
@@ -49,8 +48,7 @@ function wc_api_mps_scheduled_get_sync_type()
  */
 function wc_api_mps_scheduled_get_batch_size()
 {
-  // If force full sync is enabled, always use off-peak batch size
-  $force_full_sync = get_option('wc_api_mps_cron_force_full_sync', 0);
+  $force_full_sync = get_option('wc_api_mps_force_full_sync', 0);
 
   if ($force_full_sync || wc_api_mps_scheduled_is_off_peak()) {
     return get_option('wc_api_mps_cron_batch_size_offpeak', 20);
