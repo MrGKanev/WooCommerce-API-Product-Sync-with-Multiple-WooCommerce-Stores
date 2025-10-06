@@ -47,6 +47,9 @@ function wc_api_mps_scheduled_process_admin_actions()
     $auto_sync_orders = isset($_POST['auto_sync_orders']) ? 1 : 0;
     update_option('wc_api_mps_auto_sync_orders', $auto_sync_orders);
 
+    $force_full_sync = isset($_POST['force_full_sync']) ? 1 : 0;
+    update_option('wc_api_mps_force_full_sync', $force_full_sync);
+
     $selected_stores = isset($_POST['selected_stores']) ? $_POST['selected_stores'] : array();
     update_option('wc_api_mps_cron_selected_stores', $selected_stores);
 
@@ -98,6 +101,7 @@ function wc_api_mps_scheduled_process_admin_actions()
   $data['is_off_peak'] = wc_api_mps_scheduled_is_off_peak();
   $data['sync_type'] = wc_api_mps_scheduled_get_sync_type();
   $data['auto_sync_orders'] = get_option('wc_api_mps_auto_sync_orders', 0);
+  $data['force_full_sync'] = get_option('wc_api_mps_force_full_sync', 0);
 
   try {
     $data['products_count'] = wc_api_mps_scheduled_count_products($data['sync_type']);

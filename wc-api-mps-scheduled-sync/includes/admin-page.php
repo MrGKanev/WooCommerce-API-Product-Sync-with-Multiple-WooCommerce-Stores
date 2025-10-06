@@ -75,6 +75,12 @@ function wc_api_mps_scheduled_register_settings()
     'default' => 0,
     'sanitize_callback' => 'absint'
   ));
+
+  register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_force_full_sync', array(
+    'type' => 'integer',
+    'default' => 0,
+    'sanitize_callback' => 'absint'
+  ));
 }
 
 /**
@@ -152,7 +158,10 @@ function wc_api_mps_scheduled_admin_page()
         <tr>
           <th><?php _e('Current Mode:', 'wc-api-mps-scheduled'); ?></th>
           <td>
-            <?php if ($is_off_peak): ?>
+            <?php if ($force_full_sync): ?>
+              <span style="color: blue; font-weight: bold;">⚡ FORCE FULL SYNC MODE</span>
+              <p class="description">Full product sync 24/7 - Ignoring time schedule</p>
+            <?php elseif ($is_off_peak): ?>
               <span style="color: green; font-weight: bold;">🌙 Off-Peak</span>
               <p class="description">Full product sync - More products per batch</p>
             <?php else: ?>
@@ -277,6 +286,7 @@ function wc_api_mps_scheduled_admin_page()
         </div>
       <?php endif; ?>
     </div>
+
     <!-- Sync Schedule -->
     <div class="card">
       <h2><?php _e('Sync Schedule', 'wc-api-mps-scheduled'); ?></h2>
@@ -332,6 +342,18 @@ function wc_api_mps_scheduled_admin_page()
               </label>
               <p class="description">
                 <?php _e('When enabled, products from the last 15 orders will be synced (quantity only) whenever an order reaches Processing or Completed status.', 'wc-api-mps-scheduled'); ?>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <th><?php _e('Force Full Sync Mode:', 'wc-api-mps-scheduled'); ?></th>
+            <td>
+              <label>
+                <input type="checkbox" name="force_full_sync" value="1" <?php checked($force_full_sync, 1); ?>>
+                <?php _e('Force full product sync 24/7 (ignore time-based schedule)', 'wc-api-mps-scheduled'); ?>
+              </label>
+              <p class="description">
+                <?php _e('⚠️ When enabled: Runs <strong>full_product</strong> sync around the clock using off-peak batch size. Useful for initial bulk sync or catching up.', 'wc-api-mps-scheduled'); ?>
               </p>
             </td>
           </tr>
