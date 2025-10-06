@@ -42,7 +42,34 @@ function wc_api_mps_scheduled_run_sync()
     return;
   }
 
-  wc_api_mps_scheduled_log(sprintf('Syncing to %d selected store(s): %s', count($stores), implode(', ', array_keys($stores))));
+  // Log exclusions being applied
+  $total_excluded_cats = array();
+  $total_excluded_tags = array();
+  foreach ($stores as $store_url => $store_data) {
+    if (isset($store_data['exclude_categories_products'])) {
+      $total_excluded_cats = array_merge($total_excluded_cats, $store_data['exclude_categories_products']);
+    }
+    if (isset($store_data['exclude_tags_products'])) {
+      $total_excluded_tags = array_merge($total_excluded_tags, $store_data['exclude_tags_products']);
+    }
+  }
+  $total_excluded_cats = array_unique($total_excluded_cats);
+  $total_excluded_tags = array_unique($total_excluded_tags);
+
+  $exclusion_info = '';
+  if (!empty($total_excluded_cats)) {
+    $exclusion_info .= sprintf(' | Excluding %d categories', count($total_excluded_cats));
+  }
+  if (!empty($total_excluded_tags)) {
+    $exclusion_info .= sprintf(' | Excluding %d tags', count($total_excluded_tags));
+  }
+
+  wc_api_mps_scheduled_log(sprintf(
+    'Syncing to %d selected store(s): %s%s',
+    count($stores),
+    implode(', ', array_keys($stores)),
+    $exclusion_info
+  ));
 
   // Determine sync type and batch size
   $sync_type = wc_api_mps_scheduled_get_sync_type();
