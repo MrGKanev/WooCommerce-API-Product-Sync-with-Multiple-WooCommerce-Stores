@@ -39,6 +39,13 @@ function wc_api_mps_scheduled_process_admin_actions()
     $data['messages'][] = array('type' => 'success', 'text' => __('Logs cleared.', 'wc-api-mps-scheduled'));
   }
 
+  // Handle cleanup old SKU logs
+  if (isset($_POST['cleanup_sku_logs']) && check_admin_referer('wc_api_mps_cleanup_logs')) {
+    $days = isset($_POST['cleanup_days']) ? (int) $_POST['cleanup_days'] : 30;
+    $deleted = wc_api_mps_cleanup_old_sku_logs($days);
+    $data['messages'][] = array('type' => 'success', 'text' => sprintf(__('Deleted %d old log file(s).', 'wc-api-mps-scheduled'), $deleted));
+  }
+
   // Handle save settings
   if (isset($_POST['save_settings']) && check_admin_referer('wc_api_mps_save_settings')) {
     update_option('wc_api_mps_cron_batch_size', (int) $_POST['batch_size']);
@@ -102,6 +109,8 @@ function wc_api_mps_scheduled_process_admin_actions()
   $data['sync_type'] = wc_api_mps_scheduled_get_sync_type();
   $data['auto_sync_orders'] = get_option('wc_api_mps_auto_sync_orders', 0);
   $data['force_full_sync'] = get_option('wc_api_mps_force_full_sync', 0);
+  $data['sku_log_stats'] = wc_api_mps_get_sku_log_stats();
+  $data['sku_log_files'] = wc_api_mps_get_sku_log_files();
 
   try {
     $data['products_count'] = wc_api_mps_scheduled_count_products($data['sync_type']);
@@ -205,7 +214,18 @@ function wc_api_mps_force_sync_last_orders()
       update_post_meta($product_id, '_wc_api_mps_needs_light_sync', 0);
 
       $success_count++;
+
+      // Log to both systems
       wc_api_mps_scheduled_log(sprintf('✓ Force sync: %s', $product_identifier));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $product_sku,
+        $product_id,
+        'quantity',
+        array_keys($stores),
+        true
+      );
 
       usleep(100000);
     } catch (Exception $e) {
@@ -213,7 +233,21 @@ function wc_api_mps_force_sync_last_orders()
       $product = wc_get_product($product_id);
       $product_sku = $product ? $product->get_sku() : '';
       $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
-      wc_api_mps_scheduled_log(sprintf('✗ Force sync error %s: %s', $product_identifier, $e->getMessage()));
+
+      $error_msg = $e->getMessage();
+
+      // Log to both systems
+      wc_api_mps_scheduled_log(sprintf('✗ Force sync error %s: %s', $product_identifier, $error_msg));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $product_sku,
+        $product_id,
+        'quantity',
+        array_keys($stores),
+        false,
+        $error_msg
+      );
     }
   }
 

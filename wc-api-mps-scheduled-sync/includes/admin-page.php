@@ -480,6 +480,93 @@ function wc_api_mps_scheduled_admin_page()
       <?php endif; ?>
     </div>
 
+    // Add this section right after the "Recent Logs" card and before the debug info
+
+    <!-- SKU Sync Logs -->
+    <div class="card">
+      <h2><?php _e('SKU Sync Logs', 'wc-api-mps-scheduled'); ?></h2>
+
+      <div style="margin-bottom: 15px;">
+        <strong><?php _e('Log Statistics:', 'wc-api-mps-scheduled'); ?></strong>
+        <ul style="margin-left: 20px;">
+          <li><?php printf(__('Total Files: %d', 'wc-api-mps-scheduled'), $sku_log_stats['total_files']); ?></li>
+          <li><?php printf(__('Total Size: %s MB', 'wc-api-mps-scheduled'), $sku_log_stats['total_size_mb']); ?></li>
+          <li><?php printf(__('Total Entries: %s', 'wc-api-mps-scheduled'), number_format($sku_log_stats['total_lines'])); ?></li>
+          <li><?php printf(__('Log Directory: %s', 'wc-api-mps-scheduled'), '<code>' . esc_html($sku_log_stats['log_dir']) . '</code>'); ?></li>
+        </ul>
+      </div>
+
+      <?php if (!empty($sku_log_files)): ?>
+        <div style="margin-bottom: 15px;">
+          <strong><?php _e('Available Log Files:', 'wc-api-mps-scheduled'); ?></strong>
+          <form method="get" style="margin-top: 10px;">
+            <input type="hidden" name="page" value="wc-api-mps-scheduled-sync">
+            <select name="view_sku_log">
+              <option value=""><?php _e('Select a log file...', 'wc-api-mps-scheduled'); ?></option>
+              <?php foreach ($sku_log_files as $log_file): ?>
+                <option value="<?php echo esc_attr(basename($log_file)); ?>" <?php selected(isset($_GET['view_sku_log']) && $_GET['view_sku_log'] === basename($log_file)); ?>>
+                  <?php
+                  echo esc_html(basename($log_file)) . ' (' . size_format(filesize($log_file)) . ') - ' .
+                    date('Y-m-d H:i', filemtime($log_file));
+                  ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <input type="submit" class="button button-secondary" value="<?php _e('View Log', 'wc-api-mps-scheduled'); ?>">
+          </form>
+        </div>
+
+        <?php if (isset($_GET['view_sku_log']) && !empty($_GET['view_sku_log'])): ?>
+          <?php
+          $selected_log = sanitize_file_name($_GET['view_sku_log']);
+          $log_path = wc_api_mps_get_sku_log_dir() . '/' . $selected_log;
+
+          if (file_exists($log_path)) {
+            $log_contents = wc_api_mps_get_sku_log_contents($log_path, 200);
+          ?>
+            <div style="margin-top: 15px;">
+              <h3><?php printf(__('Viewing: %s (Last 200 entries)', 'wc-api-mps-scheduled'), esc_html($selected_log)); ?></h3>
+              <div style="background: #f5f5f5; padding: 15px; max-height: 500px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #ddd;">
+                <?php if (!empty($log_contents)): ?>
+                  <?php foreach (array_reverse($log_contents) as $line): ?>
+                    <?php
+                    // Color code based on status
+                    $color = '#333';
+                    if (strpos($line, 'SUCCESS') !== false) {
+                      $color = 'green';
+                    } elseif (strpos($line, 'ERROR') !== false) {
+                      $color = 'red';
+                    }
+                    ?>
+                    <div style="color: <?php echo $color; ?>; margin-bottom: 5px;">
+                      <?php echo esc_html($line); ?>
+                    </div>
+                  <?php endforeach; ?>
+                <?php else: ?>
+                  <p><?php _e('Log file is empty.', 'wc-api-mps-scheduled'); ?></p>
+                <?php endif; ?>
+              </div>
+            </div>
+          <?php } ?>
+        <?php endif; ?>
+      <?php else: ?>
+        <p><?php _e('No SKU log files found yet.', 'wc-api-mps-scheduled'); ?></p>
+      <?php endif; ?>
+
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+        <form method="post" style="display: inline-block;">
+          <?php wp_nonce_field('wc_api_mps_cleanup_logs'); ?>
+          <label>
+            <?php _e('Delete logs older than:', 'wc-api-mps-scheduled'); ?>
+            <input type="number" name="cleanup_days" value="30" min="1" max="365" style="width: 60px;">
+            <?php _e('days', 'wc-api-mps-scheduled'); ?>
+          </label>
+          <input type="submit" name="cleanup_sku_logs" class="button button-secondary" value="<?php _e('Cleanup Old Logs', 'wc-api-mps-scheduled'); ?>"
+            onclick="return confirm('<?php _e('This will permanently delete old log files. Continue?', 'wc-api-mps-scheduled'); ?>');">
+        </form>
+      </div>
+    </div>
+    
     <?php
     // Show debug info if ?debug=1 is in URL
     wc_api_mps_scheduled_debug_info();

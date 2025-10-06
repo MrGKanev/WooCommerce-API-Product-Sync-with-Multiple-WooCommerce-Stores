@@ -129,13 +129,38 @@ function wc_api_mps_scheduled_run_sync()
       }
 
       $success_count++;
+
+      // Log to both systems
       wc_api_mps_scheduled_log(sprintf('✓ Synced %s (%s)', $product_identifier, $sync_type));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $product_sku,
+        $product_id,
+        $sync_type,
+        array_keys($stores),
+        true
+      );
     } catch (Exception $e) {
       $error_count++;
       $product = wc_get_product($product_id);
       $product_sku = $product ? $product->get_sku() : '';
       $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
-      wc_api_mps_scheduled_log(sprintf('✗ Error syncing %s: %s', $product_identifier, $e->getMessage()));
+
+      $error_msg = $e->getMessage();
+
+      // Log to both systems
+      wc_api_mps_scheduled_log(sprintf('✗ Error syncing %s: %s', $product_identifier, $error_msg));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $product_sku,
+        $product_id,
+        $sync_type,
+        array_keys($stores),
+        false,
+        $error_msg
+      );
     }
 
     // Prevent timeouts

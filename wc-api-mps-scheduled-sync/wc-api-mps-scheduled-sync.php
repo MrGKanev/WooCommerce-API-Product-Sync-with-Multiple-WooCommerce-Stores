@@ -24,6 +24,7 @@ require_once WC_API_MPS_SCHEDULED_PATH . 'includes/sync-engine.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/product-queries.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/time-manager.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/logger.php';
+require_once WC_API_MPS_SCHEDULED_PATH . 'includes/sku-logger.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/admin-handler.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/admin-page.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/hooks.php';
