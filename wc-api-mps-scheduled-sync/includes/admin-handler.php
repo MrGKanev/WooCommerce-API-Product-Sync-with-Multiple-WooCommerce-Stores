@@ -1,0 +1,304 @@
+<?php
+
+/**
+ * Admin page logic and data processing
+ */
+
+if (!defined('ABSPATH')) {
+  exit;
+}
+
+/**
+ * Handle all admin actions and prepare data
+ */
+function wc_api_mps_scheduled_process_admin_actions()
+{
+  $data = array(
+    'messages' => array(),
+    'order_sync_data' => array(),
+  );
+
+  // Check if main plugin is active
+  if (!function_exists('wc_api_mps_integration')) {
+    $data['error'] = __('WooCommerce API Product Sync plugin is not active.', 'wc-api-mps-scheduled');
+    return $data;
+  }
+
+  // Handle reschedule
+  wc_api_mps_scheduled_handle_reschedule();
+
+  // Handle manual sync
+  if (isset($_POST['run_sync_now']) && check_admin_referer('wc_api_mps_manual_sync')) {
+    wc_api_mps_scheduled_trigger_sync();
+    $data['messages'][] = array('type' => 'success', 'text' => __('Manual sync completed.', 'wc-api-mps-scheduled'));
+  }
+
+  // Handle clear logs
+  if (isset($_POST['clear_logs']) && check_admin_referer('wc_api_mps_clear_logs')) {
+    wc_api_mps_scheduled_clear_logs();
+    $data['messages'][] = array('type' => 'success', 'text' => __('Logs cleared.', 'wc-api-mps-scheduled'));
+  }
+
+  // Handle save settings
+  if (isset($_POST['save_settings']) && check_admin_referer('wc_api_mps_save_settings')) {
+    update_option('wc_api_mps_cron_batch_size', (int) $_POST['batch_size']);
+    update_option('wc_api_mps_cron_batch_size_offpeak', (int) $_POST['batch_size_offpeak']);
+
+    $auto_sync_orders = isset($_POST['auto_sync_orders']) ? 1 : 0;
+    update_option('wc_api_mps_auto_sync_orders', $auto_sync_orders);
+
+    $selected_stores = isset($_POST['selected_stores']) ? $_POST['selected_stores'] : array();
+    update_option('wc_api_mps_cron_selected_stores', $selected_stores);
+
+    delete_transient('wc_api_mps_pending_count_full_product');
+    delete_transient('wc_api_mps_pending_count_price_and_quantity');
+
+    $data['messages'][] = array('type' => 'success', 'text' => __('Settings saved.', 'wc-api-mps-scheduled'));
+  }
+
+  // Handle force sync (sync last 15 orders now)
+  if (isset($_POST['force_sync_orders']) && check_admin_referer('wc_api_mps_force_sync')) {
+    $result = wc_api_mps_force_sync_last_orders();
+    if ($result['success']) {
+      $data['messages'][] = array(
+        'type' => 'success',
+        'text' => sprintf(
+          __('Force sync completed: %d products synced, %d errors', 'wc-api-mps-scheduled'),
+          $result['success_count'],
+          $result['error_count']
+        )
+      );
+    } else {
+      $data['messages'][] = array('type' => 'error', 'text' => $result['message']);
+    }
+  }
+
+  // Handle order sync check
+  if (isset($_POST['check_orders']) && check_admin_referer('wc_api_mps_check_orders')) {
+    $data['order_sync_data'] = wc_api_mps_check_order_sync_status();
+  }
+
+  // Get current data
+  $data['all_stores'] = get_option('wc_api_mps_stores', array());
+  $data['cron_status'] = wc_api_mps_scheduled_get_cron_status();
+  $data['batch_size'] = get_option('wc_api_mps_cron_batch_size', 5);
+  $data['batch_size_offpeak'] = get_option('wc_api_mps_cron_batch_size_offpeak', 20);
+  $data['selected_stores'] = get_option('wc_api_mps_cron_selected_stores', array());
+
+  // Default to all active stores if none selected
+  if (empty($data['selected_stores']) && !empty($data['all_stores'])) {
+    foreach ($data['all_stores'] as $store_url => $store_data) {
+      if ($store_data['status']) {
+        $data['selected_stores'][] = $store_url;
+      }
+    }
+  }
+
+  $data['logs'] = wc_api_mps_scheduled_get_logs(50);
+  $data['is_off_peak'] = wc_api_mps_scheduled_is_off_peak();
+  $data['sync_type'] = wc_api_mps_scheduled_get_sync_type();
+  $data['auto_sync_orders'] = get_option('wc_api_mps_auto_sync_orders', 0);
+
+  try {
+    $data['products_count'] = wc_api_mps_scheduled_count_products($data['sync_type']);
+  } catch (Exception $e) {
+    $data['products_count'] = 0;
+  }
+
+  return $data;
+}
+
+/**
+ * Force sync products from last 15 orders immediately
+ */
+function wc_api_mps_force_sync_last_orders()
+{
+  $selected_stores = get_option('wc_api_mps_cron_selected_stores', array());
+
+  if (empty($selected_stores)) {
+    return array(
+      'success' => false,
+      'message' => __('No stores selected in settings.', 'wc-api-mps-scheduled')
+    );
+  }
+
+  $all_stores = get_option('wc_api_mps_stores', array());
+  $stores = array();
+  foreach ($selected_stores as $store_url) {
+    if (isset($all_stores[$store_url]) && $all_stores[$store_url]['status']) {
+      $stores[$store_url] = $all_stores[$store_url];
+    }
+  }
+
+  if (empty($stores)) {
+    return array(
+      'success' => false,
+      'message' => __('No active stores available.', 'wc-api-mps-scheduled')
+    );
+  }
+
+  // Get last 15 orders
+  $orders = wc_get_orders(array(
+    'limit' => 15,
+    'orderby' => 'date',
+    'order' => 'DESC',
+    'status' => array('wc-processing', 'wc-completed'),
+  ));
+
+  if (empty($orders)) {
+    return array(
+      'success' => false,
+      'message' => __('No recent orders found.', 'wc-api-mps-scheduled')
+    );
+  }
+
+  // Collect product IDs
+  $product_ids = array();
+  foreach ($orders as $order) {
+    foreach ($order->get_items() as $item) {
+      $product_id = $item->get_product_id();
+      if ($product_id) {
+        $product_ids[] = $product_id;
+      }
+      $variation_id = $item->get_variation_id();
+      if ($variation_id) {
+        $product_ids[] = $variation_id;
+      }
+    }
+  }
+  $product_ids = array_unique($product_ids);
+
+  if (empty($product_ids)) {
+    return array(
+      'success' => false,
+      'message' => __('No products found in recent orders.', 'wc-api-mps-scheduled')
+    );
+  }
+
+  wc_api_mps_scheduled_log(sprintf(
+    'Force sync: Syncing %d products from %d orders to %d store(s)',
+    count($product_ids),
+    count($orders),
+    count($stores)
+  ));
+
+  $success_count = 0;
+  $error_count = 0;
+
+  // Sync each product
+  foreach ($product_ids as $product_id) {
+    try {
+      $product = wc_get_product($product_id);
+      if (!$product) continue;
+
+      $product_sku = $product->get_sku();
+      $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
+
+      wc_api_mps_integration($product_id, $stores, 'quantity');
+
+      update_post_meta($product_id, '_wc_api_mps_last_sync', time());
+      update_post_meta($product_id, '_wc_api_mps_last_sync_type', 'quantity');
+      update_post_meta($product_id, '_wc_api_mps_needs_light_sync', 0);
+
+      $success_count++;
+      wc_api_mps_scheduled_log(sprintf('✓ Force sync: %s', $product_identifier));
+
+      usleep(100000);
+    } catch (Exception $e) {
+      $error_count++;
+      $product = wc_get_product($product_id);
+      $product_sku = $product ? $product->get_sku() : '';
+      $product_identifier = $product_sku ? "SKU: {$product_sku}" : "ID: {$product_id}";
+      wc_api_mps_scheduled_log(sprintf('✗ Force sync error %s: %s', $product_identifier, $e->getMessage()));
+    }
+  }
+
+  return array(
+    'success' => true,
+    'success_count' => $success_count,
+    'error_count' => $error_count
+  );
+}
+
+/**
+ * Check sync status of products from last 15 orders
+ */
+function wc_api_mps_check_order_sync_status()
+{
+  $selected_stores = get_option('wc_api_mps_cron_selected_stores', array());
+
+  if (empty($selected_stores)) {
+    return array();
+  }
+
+  $orders = wc_get_orders(array(
+    'limit' => 15,
+    'orderby' => 'date',
+    'order' => 'DESC',
+    'status' => array('wc-processing', 'wc-completed'),
+  ));
+
+  if (empty($orders)) {
+    return array();
+  }
+
+  $all_stores = get_option('wc_api_mps_stores', array());
+  $stores = array();
+  foreach ($selected_stores as $store_url) {
+    if (isset($all_stores[$store_url])) {
+      $stores[$store_url] = $all_stores[$store_url];
+    }
+  }
+
+  // Collect product IDs
+  $product_ids = array();
+  foreach ($orders as $order) {
+    foreach ($order->get_items() as $item) {
+      $product_id = $item->get_product_id();
+      if ($product_id) {
+        $product_ids[] = $product_id;
+      }
+      $variation_id = $item->get_variation_id();
+      if ($variation_id) {
+        $product_ids[] = $variation_id;
+      }
+    }
+  }
+  $product_ids = array_unique($product_ids);
+
+  // Check sync status
+  $results = array();
+  foreach ($product_ids as $product_id) {
+    $product = wc_get_product($product_id);
+    if (!$product) continue;
+
+    $mpsrel = get_post_meta($product_id, 'mpsrel', true);
+    if (!is_array($mpsrel)) {
+      $mpsrel = array();
+    }
+
+    $synced_stores = array();
+    $not_synced_stores = array();
+
+    foreach ($stores as $store_url => $store_data) {
+      if (isset($mpsrel[$store_url]) && $mpsrel[$store_url]) {
+        $synced_stores[] = $store_url;
+      } else {
+        $not_synced_stores[] = $store_url;
+      }
+    }
+
+    $results[] = array(
+      'product' => $product,
+      'synced_stores' => $synced_stores,
+      'not_synced_stores' => $not_synced_stores,
+    );
+  }
+
+  return array(
+    'checked_at' => current_time('mysql'),
+    'order_count' => count($orders),
+    'product_count' => count($product_ids),
+    'results' => $results,
+  );
+}
