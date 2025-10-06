@@ -64,13 +64,6 @@ function wc_api_mps_scheduled_run_sync()
     $exclusion_info .= sprintf(' | Excluding %d tags', count($total_excluded_tags));
   }
 
-  wc_api_mps_scheduled_log(sprintf(
-    'Syncing to %d selected store(s): %s%s',
-    count($stores),
-    implode(', ', array_keys($stores)),
-    $exclusion_info
-  ));
-
   // Determine sync type and batch size
   $sync_type = wc_api_mps_scheduled_get_sync_type();
   $is_off_peak = wc_api_mps_scheduled_is_off_peak();
@@ -80,9 +73,24 @@ function wc_api_mps_scheduled_run_sync()
   $products_to_sync = wc_api_mps_scheduled_get_products($sync_type);
 
   if (empty($products_to_sync)) {
-    wc_api_mps_scheduled_log(sprintf('No products need syncing (%s).', $sync_type));
+    // Only log "no products" once per hour to avoid log spam
+    $last_empty_log = get_transient('wc_api_mps_last_empty_log_' . $sync_type);
+    if (!$last_empty_log) {
+      wc_api_mps_scheduled_log(sprintf('No products need syncing (%s). Will check again silently until products are found.', $sync_type));
+      set_transient('wc_api_mps_last_empty_log_' . $sync_type, time(), 3600); // Log once per hour
+    }
     return;
   }
+
+  // Clear the "empty log" transient since we found products to sync
+  delete_transient('wc_api_mps_last_empty_log_' . $sync_type);
+
+  wc_api_mps_scheduled_log(sprintf(
+    'Syncing to %d selected store(s): %s%s',
+    count($stores),
+    implode(', ', array_keys($stores)),
+    $exclusion_info
+  ));
 
   wc_api_mps_scheduled_log(sprintf(
     'Starting %s sync for %d products (Off-peak: %s).',
