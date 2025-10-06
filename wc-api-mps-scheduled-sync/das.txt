@@ -1,4 +1,0 @@
-1. why is it still trying to sync products which aren't in the selected categories for the picked website?
-2. when the cron is made to run every 15 mins it check only once per 15 mins. Can we make it once per 5 mins?
-3. pending products are all the products not the ones for this website only - Products Pending:	15108 products
-4. what will happen when all the products are synced and there are no more products to sync? Will it stop trying to sync or will it start over again?
