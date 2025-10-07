@@ -75,12 +75,6 @@ function wc_api_mps_scheduled_register_settings()
     'default' => 0,
     'sanitize_callback' => 'absint'
   ));
-
-  register_setting('wc_api_mps_scheduled_sync', 'wc_api_mps_force_full_sync', array(
-    'type' => 'integer',
-    'default' => 0,
-    'sanitize_callback' => 'absint'
-  ));
 }
 
 /**
@@ -111,11 +105,14 @@ function wc_api_mps_scheduled_admin_page()
   // Check for error
   if (isset($data['error'])) {
 ?>
-    <div class="wrap">
+    <div class="wrap wc-api-mps-scheduled-wrap">
       <h1><?php _e('Scheduled Sync Status', 'wc-api-mps-scheduled'); ?></h1>
-      <div class="notice notice-error">
-        <p><strong><?php _e('Error:', 'wc-api-mps-scheduled'); ?></strong>
-          <?php echo esc_html($data['error']); ?></p>
+      <div class="wc-api-mps-notice error">
+        <span class="wc-api-mps-icon error">⚠</span>
+        <div>
+          <strong><?php _e('Error:', 'wc-api-mps-scheduled'); ?></strong>
+          <?php echo esc_html($data['error']); ?>
+        </div>
       </div>
     </div>
   <?php
@@ -126,99 +123,185 @@ function wc_api_mps_scheduled_admin_page()
   extract($data);
 
   ?>
-  <div class="wrap">
-    <h1><?php _e('Scheduled Sync Status', 'wc-api-mps-scheduled'); ?></h1>
+  <div class="wrap wc-api-mps-scheduled-wrap">
+
+    <!-- Header -->
+    <div class="wc-api-mps-scheduled-header">
+      <h1>⏰ <?php _e('Scheduled Sync Dashboard', 'wc-api-mps-scheduled'); ?></h1>
+      <div class="wc-api-mps-header-actions">
+        <form method="post" style="display: inline-block;">
+          <?php wp_nonce_field('wc_api_mps_manual_sync'); ?>
+          <button type="submit" name="run_sync_now" class="button button-primary">
+            <span class="dashicons dashicons-update" style="margin-top: 3px;"></span>
+            <?php _e('Run Sync Now', 'wc-api-mps-scheduled'); ?>
+          </button>
+        </form>
+        <form method="post" style="display: inline-block;">
+          <?php wp_nonce_field('wc_api_mps_clear_logs'); ?>
+          <button type="submit" name="clear_logs" class="button button-secondary">
+            <span class="dashicons dashicons-trash" style="margin-top: 3px;"></span>
+            <?php _e('Clear Logs', 'wc-api-mps-scheduled'); ?>
+          </button>
+        </form>
+      </div>
+    </div>
 
     <?php
     // Display messages
     if (!empty($messages)) {
       foreach ($messages as $message) {
-        $class = $message['type'] === 'success' ? 'notice-success' : 'notice-error';
-        echo '<div class="notice ' . esc_attr($class) . '"><p>' . esc_html($message['text']) . '</p></div>';
+        $type_class = $message['type'] === 'success' ? 'success' : 'error';
+        $icon = $message['type'] === 'success' ? '✓' : '✗';
+        echo '<div class="wc-api-mps-notice ' . esc_attr($type_class) . '">';
+        echo '<span class="wc-api-mps-icon ' . esc_attr($type_class) . '">' . $icon . '</span>';
+        echo '<div>' . esc_html($message['text']) . '</div>';
+        echo '</div>';
       }
     }
     ?>
 
-    <!-- Current Status -->
-    <div class="card">
-      <h2><?php _e('Current Status', 'wc-api-mps-scheduled'); ?></h2>
-      <table class="form-table">
-        <tr>
-          <th><?php _e('Cron Status:', 'wc-api-mps-scheduled'); ?></th>
-          <td><?php echo $cron_status['is_active'] ? '<span style="color: green;">✓ Active</span>' : '<span style="color: red;">✗ Inactive</span>'; ?></td>
-        </tr>
-        <tr>
-          <th><?php _e('Next Run:', 'wc-api-mps-scheduled'); ?></th>
-          <td><?php echo $cron_status['next_run'] ?? 'N/A'; ?></td>
-        </tr>
-        <tr>
-          <th><?php _e('Last Run:', 'wc-api-mps-scheduled'); ?></th>
-          <td><?php echo $cron_status['last_run'] ?? 'Never'; ?></td>
-        </tr>
-        <tr>
-          <th><?php _e('Current Mode:', 'wc-api-mps-scheduled'); ?></th>
-          <td>
-            <?php if ($force_full_sync): ?>
-              <span style="color: blue; font-weight: bold;">⚡ FORCE FULL SYNC MODE</span>
-              <p class="description">Full product sync 24/7 - Ignoring time schedule</p>
-            <?php elseif ($is_off_peak): ?>
-              <span style="color: green; font-weight: bold;">🌙 Off-Peak</span>
-              <p class="description">Full product sync - More products per batch</p>
-            <?php else: ?>
-              <span style="color: orange; font-weight: bold;">☀️ Peak Hours</span>
-              <p class="description">Light sync (price & quantity) - Fewer products per batch</p>
-            <?php endif; ?>
-          </td>
-        </tr>
-        <tr>
-          <th><?php _e('Products Pending:', 'wc-api-mps-scheduled'); ?></th>
-          <td><strong><?php echo $products_count; ?></strong> products</td>
-        </tr>
-        <tr>
-          <th><?php _e('Auto Order Sync:', 'wc-api-mps-scheduled'); ?></th>
-          <td>
-            <?php if ($auto_sync_orders): ?>
-              <span style="color: green; font-weight: bold;">✓ Enabled</span>
-              <p class="description">Products from last 15 orders sync when order status changes to Processing or Completed</p>
-            <?php else: ?>
-              <span style="color: #999;">✗ Disabled</span>
-            <?php endif; ?>
-          </td>
-        </tr>
-      </table>
+    <!-- Status Grid -->
+    <div class="wc-api-mps-status-grid">
+
+      <!-- Cron Status Card -->
+      <div class="wc-api-mps-status-card <?php echo $cron_status['is_active'] ? 'active' : 'inactive'; ?>">
+        <h3><?php _e('Cron Status', 'wc-api-mps-scheduled'); ?></h3>
+        <div class="wc-api-mps-status-value <?php echo $cron_status['is_active'] ? 'success' : 'error'; ?>">
+          <?php echo $cron_status['is_active'] ? '✓' : '✗'; ?>
+        </div>
+        <div class="wc-api-mps-status-label">
+          <?php echo $cron_status['is_active'] ? __('Active', 'wc-api-mps-scheduled') : __('Inactive', 'wc-api-mps-scheduled'); ?>
+        </div>
+        <?php if ($cron_status['next_run']): ?>
+          <div class="wc-api-mps-text-muted" style="font-size: 11px; margin-top: 10px;">
+            <?php _e('Next:', 'wc-api-mps-scheduled'); ?> <?php echo esc_html($cron_status['next_run']); ?>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <!-- Current Mode Card -->
+      <div class="wc-api-mps-status-card <?php echo $is_off_peak ? 'info' : 'warning'; ?>">
+        <h3><?php _e('Current Mode', 'wc-api-mps-scheduled'); ?></h3>
+        <div class="wc-api-mps-status-value" style="font-size: 24px;">
+          <?php echo $is_off_peak ? '🌙' : '☀️'; ?>
+        </div>
+        <div class="wc-api-mps-status-label">
+          <?php echo $is_off_peak ? __('Off-Peak', 'wc-api-mps-scheduled') : __('Peak Hours', 'wc-api-mps-scheduled'); ?>
+        </div>
+        <div class="wc-api-mps-text-muted" style="font-size: 11px; margin-top: 10px;">
+          <code><?php echo esc_html($sync_type); ?></code>
+        </div>
+      </div>
+
+      <!-- Pending Products Card -->
+      <div class="wc-api-mps-status-card info">
+        <h3><?php _e('Pending Sync', 'wc-api-mps-scheduled'); ?></h3>
+        <div class="wc-api-mps-status-value" style="color: #0073aa;">
+          <?php echo number_format($products_count); ?>
+        </div>
+        <div class="wc-api-mps-status-label">
+          <?php _e('Products', 'wc-api-mps-scheduled'); ?>
+        </div>
+      </div>
+
+      <!-- Auto Order Sync Card -->
+      <div class="wc-api-mps-status-card <?php echo $auto_sync_orders ? 'active' : 'inactive'; ?>">
+        <h3><?php _e('Auto Order Sync', 'wc-api-mps-scheduled'); ?></h3>
+        <div class="wc-api-mps-status-value <?php echo $auto_sync_orders ? 'success' : ''; ?>" style="<?php echo !$auto_sync_orders ? 'color: #999;' : ''; ?>">
+          <?php echo $auto_sync_orders ? '✓' : '✗'; ?>
+        </div>
+        <div class="wc-api-mps-status-label">
+          <?php echo $auto_sync_orders ? __('Enabled', 'wc-api-mps-scheduled') : __('Disabled', 'wc-api-mps-scheduled'); ?>
+        </div>
+      </div>
+
     </div>
 
-    <!-- Order Products Sync Status Check -->
-    <div class="card">
-      <h2><?php _e('Order Products Sync Status', 'wc-api-mps-scheduled'); ?></h2>
-      <p class="description">
-        <?php _e('Check if products from recent orders are synced to selected stores (price, quantity, stock status).', 'wc-api-mps-scheduled'); ?>
-      </p>
+    <!-- Schedule Section -->
+    <div class="wc-api-mps-section" id="schedule-section">
+      <div class="wc-api-mps-section-header">
+        <h2>
+          <span class="dashicons dashicons-clock"></span>
+          <?php _e('Sync Schedule', 'wc-api-mps-scheduled'); ?>
+        </h2>
+        <span class="wc-api-mps-section-toggle">▼</span>
+      </div>
+      <div class="wc-api-mps-section-content">
+        <p class="description">
+          <?php _e('Syncs run every 15 minutes. The type of sync and batch size varies based on time of day:', 'wc-api-mps-scheduled'); ?>
+        </p>
+        <table class="wc-api-mps-schedule-table">
+          <thead>
+            <tr>
+              <th><?php _e('Time Period', 'wc-api-mps-scheduled'); ?></th>
+              <th><?php _e('Sync Type', 'wc-api-mps-scheduled'); ?></th>
+              <th><?php _e('Batch Size', 'wc-api-mps-scheduled'); ?></th>
+              <th><?php _e('What Syncs', 'wc-api-mps-scheduled'); ?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="wc-api-mps-schedule-time">🌙 12:00 AM - 6:30 AM</td>
+              <td><span class="wc-api-mps-schedule-badge full">full_product</span></td>
+              <td><strong><?php echo esc_html($batch_size_offpeak); ?></strong> products</td>
+              <td><?php _e('All product data', 'wc-api-mps-scheduled'); ?></td>
+            </tr>
+            <tr>
+              <td class="wc-api-mps-schedule-time">☀️ 6:30 AM - 12:00 AM</td>
+              <td><span class="wc-api-mps-schedule-badge light">price_and_quantity</span></td>
+              <td><strong><?php echo esc_html($batch_size); ?></strong> products</td>
+              <td><?php _e('Price, quantity, stock status', 'wc-api-mps-scheduled'); ?></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-      <form method="post" style="margin: 15px 0; display: inline-block;">
-        <?php wp_nonce_field('wc_api_mps_check_orders'); ?>
-        <input type="submit" name="check_orders" class="button button-secondary" value="<?php _e('Check Last 15 Orders', 'wc-api-mps-scheduled'); ?>">
-      </form>
+    <!-- Order Products Sync Section -->
+    <div class="wc-api-mps-section" id="order-sync-section">
+      <div class="wc-api-mps-section-header">
+        <h2>
+          <span class="dashicons dashicons-cart"></span>
+          <?php _e('Order Products Sync Status', 'wc-api-mps-scheduled'); ?>
+        </h2>
+        <span class="wc-api-mps-section-toggle">▼</span>
+      </div>
+      <div class="wc-api-mps-section-content">
+        <p class="description">
+          <?php _e('Check if products from recent orders are synced to selected stores.', 'wc-api-mps-scheduled'); ?>
+        </p>
 
-      <form method="post" style="margin: 15px 0 15px 10px; display: inline-block;">
-        <?php wp_nonce_field('wc_api_mps_force_sync'); ?>
-        <input type="submit" name="force_sync_orders" class="button button-primary" value="<?php _e('Force Sync Last 15 Orders Now', 'wc-api-mps-scheduled'); ?>"
-          onclick="return confirm('<?php _e('This will sync all products from the last 15 orders immediately. Continue?', 'wc-api-mps-scheduled'); ?>');">
-      </form>
+        <div class="wc-api-mps-order-actions">
+          <form method="post">
+            <?php wp_nonce_field('wc_api_mps_check_orders'); ?>
+            <button type="submit" name="check_orders" class="button button-secondary">
+              <span class="dashicons dashicons-search" style="margin-top: 3px;"></span>
+              <?php _e('Check Last 15 Orders', 'wc-api-mps-scheduled'); ?>
+            </button>
+          </form>
 
-      <?php if (!empty($order_sync_data['results'])): ?>
-        <div style="margin-left: 15px; color: #666; margin-top: 15px;">
-          <?php
-          printf(
-            __('Last checked: %s (%d orders, %d products)', 'wc-api-mps-scheduled'),
-            $order_sync_data['checked_at'],
-            $order_sync_data['order_count'],
-            $order_sync_data['product_count']
-          );
-          ?>
+          <form method="post">
+            <?php wp_nonce_field('wc_api_mps_force_sync'); ?>
+            <button type="submit" name="force_sync_orders" class="button button-primary">
+              <span class="dashicons dashicons-update" style="margin-top: 3px;"></span>
+              <?php _e('Force Sync Last 15 Orders Now', 'wc-api-mps-scheduled'); ?>
+            </button>
+          </form>
         </div>
-        <div style="overflow-x: auto; margin-top: 15px;">
-          <table class="widefat striped">
+
+        <?php if (!empty($order_sync_data['results'])): ?>
+          <div class="wc-api-mps-order-meta">
+            📊 <?php
+                printf(
+                  __('Checked: %s | %d orders | %d products', 'wc-api-mps-scheduled'),
+                  $order_sync_data['checked_at'],
+                  $order_sync_data['order_count'],
+                  $order_sync_data['product_count']
+                );
+                ?>
+          </div>
+
+          <table class="wc-api-mps-products-table">
             <thead>
               <tr>
                 <th><?php _e('Product', 'wc-api-mps-scheduled'); ?></th>
@@ -238,13 +321,13 @@ function wc_api_mps_scheduled_admin_page()
                 $status_color = '#999';
                 $status_icon = '○';
                 if ($synced_count === $total_stores) {
-                  $status_color = 'green';
+                  $status_color = '#46b450';
                   $status_icon = '✓';
                 } elseif ($synced_count > 0) {
-                  $status_color = 'orange';
+                  $status_color = '#ffb900';
                   $status_icon = '◐';
                 } else {
-                  $status_color = 'red';
+                  $status_color = '#dc3232';
                   $status_icon = '✗';
                 }
                 ?>
@@ -254,323 +337,226 @@ function wc_api_mps_scheduled_admin_page()
                   <td>
                     <?php
                     if ($product->is_in_stock()) {
-                      echo '<span style="color: green;">●</span> ';
+                      echo '<span style="color: #46b450;">●</span> ';
                       if ($product->managing_stock()) {
                         echo esc_html($product->get_stock_quantity());
                       } else {
                         echo __('In Stock', 'wc-api-mps-scheduled');
                       }
                     } else {
-                      echo '<span style="color: red;">●</span> ' . __('Out of Stock', 'wc-api-mps-scheduled');
+                      echo '<span style="color: #dc3232;">●</span> ' . __('Out of Stock', 'wc-api-mps-scheduled');
                     }
                     ?>
                   </td>
                   <td>
-                    <span style="color: <?php echo $status_color; ?>; font-weight: bold;">
-                      <?php echo $status_icon; ?> <?php echo $synced_count; ?>/<?php echo $total_stores; ?>
-                    </span>
+                    <div class="wc-api-mps-sync-status">
+                      <span class="wc-api-mps-sync-indicator" style="color: <?php echo $status_color; ?>;">
+                        <?php echo $status_icon; ?>
+                      </span>
+                      <span style="font-weight: bold;">
+                        <?php echo $synced_count; ?>/<?php echo $total_stores; ?>
+                      </span>
+                    </div>
                     <?php if ($not_synced_count > 0): ?>
-                      <br>
-                      <small style="color: #d63638;">
+                      <span class="wc-api-mps-sync-missing">
                         <?php _e('Missing:', 'wc-api-mps-scheduled'); ?>
                         <?php echo esc_html(implode(', ', array_map(function ($url) {
                           return parse_url($url, PHP_URL_HOST);
                         }, $result['not_synced_stores']))); ?>
-                      </small>
+                      </span>
                     <?php endif; ?>
                   </td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
           </table>
-        </div>
-      <?php endif; ?>
-    </div>
-
-    <!-- Sync Schedule -->
-    <div class="card">
-      <h2><?php _e('Sync Schedule', 'wc-api-mps-scheduled'); ?></h2>
-      <table class="widefat">
-        <thead>
-          <tr>
-            <th><?php _e('Time Period', 'wc-api-mps-scheduled'); ?></th>
-            <th><?php _e('Sync Type', 'wc-api-mps-scheduled'); ?></th>
-            <th><?php _e('Products per Run', 'wc-api-mps-scheduled'); ?></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>🌙 12:00 AM - 6:30 AM</strong></td>
-            <td><code>full_product</code></td>
-            <td><?php echo $batch_size_offpeak; ?></td>
-          </tr>
-          <tr>
-            <td><strong>☀️ 6:30 AM - 12:00 AM</strong></td>
-            <td><code>price_and_quantity</code></td>
-            <td><?php echo $batch_size; ?></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Settings -->
-    <div class="card">
-      <h2><?php _e('Settings', 'wc-api-mps-scheduled'); ?></h2>
-      <form method="post">
-        <?php wp_nonce_field('wc_api_mps_save_settings'); ?>
-        <table class="form-table">
-          <tr>
-            <th><?php _e('Peak Hours Batch Size:', 'wc-api-mps-scheduled'); ?></th>
-            <td>
-              <input type="number" name="batch_size" value="<?php echo esc_attr($batch_size); ?>" min="1" max="50">
-              <p class="description"><?php _e('Recommended: 5-10', 'wc-api-mps-scheduled'); ?></p>
-            </td>
-          </tr>
-          <tr>
-            <th><?php _e('Off-Peak Batch Size:', 'wc-api-mps-scheduled'); ?></th>
-            <td>
-              <input type="number" name="batch_size_offpeak" value="<?php echo esc_attr($batch_size_offpeak); ?>" min="1" max="100">
-              <p class="description"><?php _e('Recommended: 20-50', 'wc-api-mps-scheduled'); ?></p>
-            </td>
-          </tr>
-          <tr>
-            <th><?php _e('Auto Sync on Order:', 'wc-api-mps-scheduled'); ?></th>
-            <td>
-              <label>
-                <input type="checkbox" name="auto_sync_orders" value="1" <?php checked($auto_sync_orders, 1); ?>>
-                <?php _e('Automatically sync products when order status changes to Processing or Completed', 'wc-api-mps-scheduled'); ?>
-              </label>
-              <p class="description">
-                <?php _e('When enabled, products from the last 15 orders will be synced (quantity only) whenever an order reaches Processing or Completed status.', 'wc-api-mps-scheduled'); ?>
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <th><?php _e('Force Full Sync Mode:', 'wc-api-mps-scheduled'); ?></th>
-            <td>
-              <label>
-                <input type="checkbox" name="force_full_sync" value="1" <?php checked($force_full_sync, 1); ?>>
-                <?php _e('Force full product sync 24/7 (ignore time-based schedule)', 'wc-api-mps-scheduled'); ?>
-              </label>
-              <p class="description">
-                <?php _e('⚠️ When enabled: Runs <strong>full_product</strong> sync around the clock using off-peak batch size. Useful for initial bulk sync or catching up.', 'wc-api-mps-scheduled'); ?>
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <th><?php _e('Sync to These Stores:', 'wc-api-mps-scheduled'); ?></th>
-            <td>
-              <?php if (empty($all_stores)): ?>
-                <p class="description" style="color: #d63638;">
-                  <?php _e('⚠️ No stores configured in the main plugin. Please add stores first.', 'wc-api-mps-scheduled'); ?>
-                </p>
-              <?php else: ?>
-                <label style="display: block; margin-bottom: 10px;">
-                  <input type="checkbox" class="wc-api-mps-select-all-stores" />
-                  <strong><?php _e('Select/Deselect All', 'wc-api-mps-scheduled'); ?></strong>
-                </label>
-                <div style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-height: 300px; overflow-y: auto;">
-                  <?php foreach ($all_stores as $store_url => $store_data): ?>
-                    <?php
-                    $is_active = $store_data['status'];
-                    $is_selected = in_array($store_url, $selected_stores);
-                    $excluded_cats = isset($store_data['exclude_categories_products']) ? $store_data['exclude_categories_products'] : array();
-                    $excluded_tags = isset($store_data['exclude_tags_products']) ? $store_data['exclude_tags_products'] : array();
-                    ?>
-                    <div style="margin-bottom: 10px; padding: 8px; background: white; border-left: 3px solid <?php echo $is_active ? '#46b450' : '#ddd'; ?>;">
-                      <label style="display: block;">
-                        <input type="checkbox"
-                          name="selected_stores[]"
-                          value="<?php echo esc_attr($store_url); ?>"
-                          <?php checked($is_selected); ?>
-                          <?php disabled(!$is_active); ?> />
-                        <strong><?php echo esc_html($store_url); ?></strong>
-                        <?php if (!$is_active): ?>
-                          <span style="color: #d63638;">(Inactive)</span>
-                        <?php endif; ?>
-                      </label>
-                      <?php if (!empty($excluded_cats) || !empty($excluded_tags)): ?>
-                        <div style="margin-left: 25px; font-size: 12px; color: #666;">
-                          <?php if (!empty($excluded_cats)): ?>
-                            <?php
-                            $cat_names = array();
-                            foreach ($excluded_cats as $cat_id) {
-                              $term = get_term($cat_id, 'product_cat');
-                              if ($term && !is_wp_error($term)) {
-                                $cat_names[] = $term->name;
-                              }
-                            }
-                            ?>
-                            <span>🚫 Categories: <?php echo esc_html(implode(', ', $cat_names)); ?></span><br>
-                          <?php endif; ?>
-                          <?php if (!empty($excluded_tags)): ?>
-                            <?php
-                            $tag_names = array();
-                            foreach ($excluded_tags as $tag_id) {
-                              $term = get_term($tag_id, 'product_tag');
-                              if ($term && !is_wp_error($term)) {
-                                $tag_names[] = $term->name;
-                              }
-                            }
-                            ?>
-                            <span>🚫 Tags: <?php echo esc_html(implode(', ', $tag_names)); ?></span>
-                          <?php endif; ?>
-                        </div>
-                      <?php endif; ?>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-                <p class="description" style="margin-top: 10px;">
-                  <?php _e('⚠️ Only checked stores will receive scheduled syncs. Category/tag exclusions are automatically respected.', 'wc-api-mps-scheduled'); ?>
-                </p>
-              <?php endif; ?>
-            </td>
-          </tr>
-        </table>
-        <p class="submit">
-          <input type="submit" name="save_settings" class="button button-primary" value="<?php _e('Save Settings', 'wc-api-mps-scheduled'); ?>">
-        </p>
-      </form>
-    </div>
-
-    <script>
-      jQuery(document).ready(function($) {
-        $('.wc-api-mps-select-all-stores').on('change', function() {
-          var checked = $(this).prop('checked');
-          $('input[name="selected_stores[]"]:not(:disabled)').prop('checked', checked);
-        });
-      });
-    </script>
-
-    <!-- Actions -->
-    <div class="card">
-      <h2><?php _e('Manual Actions', 'wc-api-mps-scheduled'); ?></h2>
-      <form method="post" style="display: inline-block;">
-        <?php wp_nonce_field('wc_api_mps_manual_sync'); ?>
-        <input type="submit" name="run_sync_now" class="button button-secondary" value="<?php _e('Run Sync Now', 'wc-api-mps-scheduled'); ?>">
-      </form>
-      <form method="post" style="display: inline-block; margin-left: 10px;">
-        <?php wp_nonce_field('wc_api_mps_clear_logs'); ?>
-        <input type="submit" name="clear_logs" class="button button-secondary" value="<?php _e('Clear Logs', 'wc-api-mps-scheduled'); ?>">
-      </form>
-    </div>
-
-    <!-- Logs -->
-    <div class="card">
-      <h2><?php _e('Recent Logs', 'wc-api-mps-scheduled'); ?></h2>
-      <?php if (empty($logs)): ?>
-        <p><?php _e('No logs yet.', 'wc-api-mps-scheduled'); ?></p>
-      <?php else: ?>
-        <table class="widefat striped">
-          <thead>
-            <tr>
-              <th style="width: 180px;"><?php _e('Time', 'wc-api-mps-scheduled'); ?></th>
-              <th><?php _e('Message', 'wc-api-mps-scheduled'); ?></th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach (array_reverse($logs) as $log): ?>
-              <tr>
-                <td><?php echo esc_html($log['time']); ?></td>
-                <td><?php echo esc_html($log['message']); ?></td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      <?php endif; ?>
-    </div>
-
-    // Add this section right after the "Recent Logs" card and before the debug info
-
-    <!-- SKU Sync Logs -->
-    <div class="card">
-      <h2><?php _e('SKU Sync Logs', 'wc-api-mps-scheduled'); ?></h2>
-
-      <div style="margin-bottom: 15px;">
-        <strong><?php _e('Log Statistics:', 'wc-api-mps-scheduled'); ?></strong>
-        <ul style="margin-left: 20px;">
-          <li><?php printf(__('Total Files: %d', 'wc-api-mps-scheduled'), $sku_log_stats['total_files']); ?></li>
-          <li><?php printf(__('Total Size: %s MB', 'wc-api-mps-scheduled'), $sku_log_stats['total_size_mb']); ?></li>
-          <li><?php printf(__('Total Entries: %s', 'wc-api-mps-scheduled'), number_format($sku_log_stats['total_lines'])); ?></li>
-          <li><?php printf(__('Log Directory: %s', 'wc-api-mps-scheduled'), '<code>' . esc_html($sku_log_stats['log_dir']) . '</code>'); ?></li>
-        </ul>
-      </div>
-
-      <?php if (!empty($sku_log_files)): ?>
-        <div style="margin-bottom: 15px;">
-          <strong><?php _e('Available Log Files:', 'wc-api-mps-scheduled'); ?></strong>
-          <form method="get" style="margin-top: 10px;">
-            <input type="hidden" name="page" value="wc-api-mps-scheduled-sync">
-            <select name="view_sku_log">
-              <option value=""><?php _e('Select a log file...', 'wc-api-mps-scheduled'); ?></option>
-              <?php foreach ($sku_log_files as $log_file): ?>
-                <option value="<?php echo esc_attr(basename($log_file)); ?>" <?php selected(isset($_GET['view_sku_log']) && $_GET['view_sku_log'] === basename($log_file)); ?>>
-                  <?php
-                  echo esc_html(basename($log_file)) . ' (' . size_format(filesize($log_file)) . ') - ' .
-                    date('Y-m-d H:i', filemtime($log_file));
-                  ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-            <input type="submit" class="button button-secondary" value="<?php _e('View Log', 'wc-api-mps-scheduled'); ?>">
-          </form>
-        </div>
-
-        <?php if (isset($_GET['view_sku_log']) && !empty($_GET['view_sku_log'])): ?>
-          <?php
-          $selected_log = sanitize_file_name($_GET['view_sku_log']);
-          $log_path = wc_api_mps_get_sku_log_dir() . '/' . $selected_log;
-
-          if (file_exists($log_path)) {
-            $log_contents = wc_api_mps_get_sku_log_contents($log_path, 200);
-          ?>
-            <div style="margin-top: 15px;">
-              <h3><?php printf(__('Viewing: %s (Last 200 entries)', 'wc-api-mps-scheduled'), esc_html($selected_log)); ?></h3>
-              <div style="background: #f5f5f5; padding: 15px; max-height: 500px; overflow-y: auto; font-family: monospace; font-size: 12px; border: 1px solid #ddd;">
-                <?php if (!empty($log_contents)): ?>
-                  <?php foreach (array_reverse($log_contents) as $line): ?>
-                    <?php
-                    // Color code based on status
-                    $color = '#333';
-                    if (strpos($line, 'SUCCESS') !== false) {
-                      $color = 'green';
-                    } elseif (strpos($line, 'ERROR') !== false) {
-                      $color = 'red';
-                    }
-                    ?>
-                    <div style="color: <?php echo $color; ?>; margin-bottom: 5px;">
-                      <?php echo esc_html($line); ?>
-                    </div>
-                  <?php endforeach; ?>
-                <?php else: ?>
-                  <p><?php _e('Log file is empty.', 'wc-api-mps-scheduled'); ?></p>
-                <?php endif; ?>
-              </div>
-            </div>
-          <?php } ?>
         <?php endif; ?>
-      <?php else: ?>
-        <p><?php _e('No SKU log files found yet.', 'wc-api-mps-scheduled'); ?></p>
-      <?php endif; ?>
+      </div>
+    </div>
 
-      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
-        <form method="post" style="display: inline-block;">
-          <?php wp_nonce_field('wc_api_mps_cleanup_logs'); ?>
-          <label>
-            <?php _e('Delete logs older than:', 'wc-api-mps-scheduled'); ?>
-            <input type="number" name="cleanup_days" value="30" min="1" max="365" style="width: 60px;">
-            <?php _e('days', 'wc-api-mps-scheduled'); ?>
-          </label>
-          <input type="submit" name="cleanup_sku_logs" class="button button-secondary" value="<?php _e('Cleanup Old Logs', 'wc-api-mps-scheduled'); ?>"
-            onclick="return confirm('<?php _e('This will permanently delete old log files. Continue?', 'wc-api-mps-scheduled'); ?>');">
+    <!-- Settings Section -->
+    <div class="wc-api-mps-section" id="settings-section">
+      <div class="wc-api-mps-section-header">
+        <h2>
+          <span class="dashicons dashicons-admin-generic"></span>
+          <?php _e('Settings', 'wc-api-mps-scheduled'); ?>
+        </h2>
+        <span class="wc-api-mps-section-toggle">▼</span>
+      </div>
+      <div class="wc-api-mps-section-content">
+        <form method="post">
+          <?php wp_nonce_field('wc_api_mps_save_settings'); ?>
+
+          <table class="wc-api-mps-form-table">
+            <tr>
+              <th><?php _e('Peak Hours Batch Size', 'wc-api-mps-scheduled'); ?></th>
+              <td>
+                <input type="number" name="batch_size" value="<?php echo esc_attr($batch_size); ?>" min="1" max="50" style="width: 80px;">
+                <p class="description"><?php _e('Products to sync per run during peak hours (6:30 AM - 12:00 AM). Recommended: 5-10', 'wc-api-mps-scheduled'); ?></p>
+              </td>
+            </tr>
+
+            <tr>
+              <th><?php _e('Off-Peak Batch Size', 'wc-api-mps-scheduled'); ?></th>
+              <td>
+                <input type="number" name="batch_size_offpeak" value="<?php echo esc_attr($batch_size_offpeak); ?>" min="1" max="100" style="width: 80px;">
+                <p class="description"><?php _e('Products to sync per run during off-peak (12:00 AM - 6:30 AM). Recommended: 20-50', 'wc-api-mps-scheduled'); ?></p>
+              </td>
+            </tr>
+
+            <tr>
+              <th><?php _e('Auto Order Sync', 'wc-api-mps-scheduled'); ?></th>
+              <td>
+                <label>
+                  <input type="checkbox" name="auto_sync_orders" value="1" <?php checked($auto_sync_orders, 1); ?>>
+                  <?php _e('Automatically sync products when order status changes to Processing or Completed', 'wc-api-mps-scheduled'); ?>
+                </label>
+                <p class="description">
+                  <?php _e('When enabled, products from the last 15 orders will be synced (quantity only) whenever an order reaches Processing or Completed status.', 'wc-api-mps-scheduled'); ?>
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <th><?php _e('Sync to These Stores', 'wc-api-mps-scheduled'); ?></th>
+              <td>
+                <?php if (empty($all_stores)): ?>
+                  <div class="wc-api-mps-notice error">
+                    <span class="wc-api-mps-icon error">⚠</span>
+                    <div><?php _e('No stores configured in the main plugin. Please add stores first.', 'wc-api-mps-scheduled'); ?></div>
+                  </div>
+                <?php else: ?>
+                  <label style="display: block; margin-bottom: 10px;">
+                    <input type="checkbox" class="wc-api-mps-select-all-stores" />
+                    <strong><?php _e('Select/Deselect All', 'wc-api-mps-scheduled'); ?></strong>
+                  </label>
+
+                  <div class="wc-api-mps-stores-container">
+                    <?php foreach ($all_stores as $store_url => $store_data): ?>
+                      <?php
+                      $is_active = $store_data['status'];
+                      $is_selected = in_array($store_url, $selected_stores);
+                      $excluded_cats = isset($store_data['exclude_categories_products']) ? $store_data['exclude_categories_products'] : array();
+                      $excluded_tags = isset($store_data['exclude_tags_products']) ? $store_data['exclude_tags_products'] : array();
+                      ?>
+                      <div class="wc-api-mps-store-item <?php echo $is_active ? 'active' : 'inactive'; ?>">
+                        <label class="wc-api-mps-store-label">
+                          <input type="checkbox"
+                            name="selected_stores[]"
+                            value="<?php echo esc_attr($store_url); ?>"
+                            <?php checked($is_selected); ?>
+                            <?php disabled(!$is_active); ?> />
+                          <strong><?php echo esc_html($store_url); ?></strong>
+                          <?php if (!$is_active): ?>
+                            <span class="wc-api-mps-badge inactive"><?php _e('Inactive', 'wc-api-mps-scheduled'); ?></span>
+                          <?php endif; ?>
+                        </label>
+
+                        <?php if (!empty($excluded_cats) || !empty($excluded_tags)): ?>
+                          <div class="wc-api-mps-store-exclusions">
+                            <?php if (!empty($excluded_cats)): ?>
+                              <?php
+                              $cat_names = array();
+                              foreach ($excluded_cats as $cat_id) {
+                                $term = get_term($cat_id, 'product_cat');
+                                if ($term && !is_wp_error($term)) {
+                                  $cat_names[] = $term->name;
+                                }
+                              }
+                              ?>
+                              <div>🚫 Categories: <?php echo esc_html(implode(', ', $cat_names)); ?></div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($excluded_tags)): ?>
+                              <?php
+                              $tag_names = array();
+                              foreach ($excluded_tags as $tag_id) {
+                                $term = get_term($tag_id, 'product_tag');
+                                if ($term && !is_wp_error($term)) {
+                                  $tag_names[] = $term->name;
+                                }
+                              }
+                              ?>
+                              <div>🚫 Tags: <?php echo esc_html(implode(', ', $tag_names)); ?></div>
+                            <?php endif; ?>
+                          </div>
+                        <?php endif; ?>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+
+                  <p class="description wc-api-mps-mt-15">
+                    ⚠️ <?php _e('Only checked stores will receive scheduled syncs. Category/tag exclusions are automatically respected.', 'wc-api-mps-scheduled'); ?>
+                  </p>
+                <?php endif; ?>
+              </td>
+            </tr>
+          </table>
+
+          <p class="submit">
+            <button type="submit" name="save_settings" class="button button-primary">
+              <span class="dashicons dashicons-yes" style="margin-top: 3px;"></span>
+              <?php _e('Save Settings', 'wc-api-mps-scheduled'); ?>
+            </button>
+          </p>
         </form>
       </div>
     </div>
-    
+
+    <!-- Logs Section -->
+    <div class="wc-api-mps-section" id="logs-section">
+      <div class="wc-api-mps-section-header collapsed">
+        <h2>
+          <span class="dashicons dashicons-media-text"></span>
+          <?php _e('Recent Logs', 'wc-api-mps-scheduled'); ?>
+          <span class="wc-api-mps-badge" style="margin-left: 10px;"><?php echo count($logs); ?></span>
+        </h2>
+        <span class="wc-api-mps-section-toggle">▼</span>
+      </div>
+      <div class="wc-api-mps-section-content" style="display: none;">
+        <?php if (empty($logs)): ?>
+          <p class="wc-api-mps-text-muted wc-api-mps-text-center"><?php _e('No logs yet.', 'wc-api-mps-scheduled'); ?></p>
+        <?php else: ?>
+          <table class="wc-api-mps-logs-table">
+            <thead>
+              <tr>
+                <th style="width: 180px;"><?php _e('Time', 'wc-api-mps-scheduled'); ?></th>
+                <th><?php _e('Message', 'wc-api-mps-scheduled'); ?></th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach (array_reverse($logs) as $log): ?>
+                <tr>
+                  <td class="wc-api-mps-log-time"><?php echo esc_html($log['time']); ?></td>
+                  <td class="wc-api-mps-log-message"><?php echo esc_html($log['message']); ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      </div>
+    </div>
+
     <?php
     // Show debug info if ?debug=1 is in URL
-    wc_api_mps_scheduled_debug_info();
+    if (isset($_GET['debug'])) {
     ?>
+      <div class="wc-api-mps-section wc-api-mps-debug" id="debug-section">
+        <div class="wc-api-mps-section-header">
+          <h2>
+            <span class="dashicons dashicons-warning"></span>
+            <?php _e('Debug Information', 'wc-api-mps-scheduled'); ?>
+          </h2>
+          <span class="wc-api-mps-section-toggle">▼</span>
+        </div>
+        <div class="wc-api-mps-section-content">
+          <?php wc_api_mps_scheduled_debug_info(); ?>
+        </div>
+      </div>
+    <?php
+    }
+    ?>
+
   </div>
 <?php
 }

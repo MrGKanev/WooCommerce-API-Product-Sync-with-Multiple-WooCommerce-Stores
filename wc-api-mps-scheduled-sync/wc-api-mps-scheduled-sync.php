@@ -39,6 +39,35 @@ register_deactivation_hook(__FILE__, 'wc_api_mps_scheduled_deactivate');
 add_action('admin_menu', 'wc_api_mps_scheduled_add_menu', 100);
 add_action('admin_init', 'wc_api_mps_scheduled_register_settings');
 
+// Enqueue admin assets
+add_action('admin_enqueue_scripts', 'wc_api_mps_scheduled_enqueue_assets');
+
+/**
+ * Enqueue CSS and JS assets for admin page
+ */
+function wc_api_mps_scheduled_enqueue_assets($hook)
+{
+  // Only load on our admin page
+  if ($hook !== 'product-sync_page_wc-api-mps-scheduled-sync' && $hook !== 'toplevel_page_wc-api-mps-scheduled-sync') {
+    return;
+  }
+
+  wp_enqueue_style(
+    'wc-api-mps-scheduled-admin',
+    WC_API_MPS_SCHEDULED_URL . 'includes/admin-styles.css',
+    array(),
+    WC_API_MPS_SCHEDULED_VERSION
+  );
+
+  wp_enqueue_script(
+    'wc-api-mps-scheduled-admin',
+    WC_API_MPS_SCHEDULED_URL . 'includes/admin-scripts.js',
+    array('jquery'),
+    WC_API_MPS_SCHEDULED_VERSION,
+    true
+  );
+}
+
 // Initialize cron
 add_action('wc_api_mps_scheduled_sync_check', 'wc_api_mps_scheduled_run_sync');
 add_action('wc_api_mps_order_sync_event', 'wc_api_mps_sync_last_orders');
