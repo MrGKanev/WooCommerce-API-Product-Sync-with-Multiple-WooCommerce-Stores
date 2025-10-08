@@ -1,7 +1,8 @@
 <?php
 
 /**
- * Product query functions
+ * Product query functions for scheduled sync
+ * Modified to support pending products (1:1 status sync with destinations)
  */
 
 if (!defined('ABSPATH')) {
@@ -9,15 +10,16 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Get products that need syncing (excluding products in excluded categories/tags)
+ * Get products that need syncing based on sync type
+ * Now includes 'pending' status products for 1:1 status matching
  */
-function wc_api_mps_scheduled_get_products($sync_type, $limit = 10)
+function wc_api_mps_scheduled_get_products($sync_type = 'full_product', $limit = 5)
 {
   // Get selected stores and their exclusions
   $selected_store_urls = get_option('wc_api_mps_cron_selected_stores', array());
   $all_stores = get_option('wc_api_mps_stores', array());
 
-  // Collect all excluded category and tag IDs from selected stores
+  // Collect all excluded category and tag IDs
   $excluded_cat_ids = array();
   $excluded_tag_ids = array();
 
@@ -41,10 +43,11 @@ function wc_api_mps_scheduled_get_products($sync_type, $limit = 10)
   $products = array();
 
   if ($sync_type === 'full_product') {
+    // Get products needing full sync (including pending status)
     $args = array(
       'post_type'      => 'product',
       'posts_per_page' => $limit,
-      'post_status'    => 'publish',
+      'post_status'    => array('publish', 'pending'), // Support both publish and pending
       'fields'         => 'ids',
       'orderby'        => 'modified',
       'order'          => 'DESC',
@@ -87,11 +90,11 @@ function wc_api_mps_scheduled_get_products($sync_type, $limit = 10)
       );
     }
   } else {
-    // Light sync - price and quantity changes
+    // Light sync (price_and_quantity) - also support pending products
     $args = array(
       'post_type'      => 'product',
       'posts_per_page' => $limit,
-      'post_status'    => 'publish',
+      'post_status'    => array('publish', 'pending'), // Support both publish and pending
       'fields'         => 'ids',
       'orderby'        => 'modified',
       'order'          => 'DESC',
@@ -138,6 +141,7 @@ function wc_api_mps_scheduled_get_products($sync_type, $limit = 10)
 
 /**
  * Get count of products needing sync (with exclusions and caching)
+ * Now includes pending products in the count
  */
 function wc_api_mps_scheduled_count_products($sync_type)
 {
@@ -197,6 +201,7 @@ function wc_api_mps_scheduled_count_products($sync_type)
   }
 
   if ($sync_type === 'full_product') {
+    // Count both publish and pending products needing full sync
     $count = $wpdb->get_var("
             SELECT COUNT(DISTINCT p.ID) 
             FROM {$wpdb->posts} p
@@ -204,17 +209,18 @@ function wc_api_mps_scheduled_count_products($sync_type)
             LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_wc_api_mps_needs_sync'
             LEFT JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_wc_api_mps_last_sync'
             WHERE p.post_type = 'product' 
-            AND p.post_status = 'publish'
+            AND p.post_status IN ('publish', 'pending')
             AND (pm1.meta_value = '1' OR pm2.meta_value = '1' OR pm3.meta_id IS NULL)
             {$exclusion_sql}
         ");
   } else {
+    // Count both publish and pending products needing light sync
     $count = $wpdb->get_var("
             SELECT COUNT(DISTINCT p.ID) 
             FROM {$wpdb->posts} p
             INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id 
             WHERE p.post_type = 'product' 
-            AND p.post_status = 'publish'
+            AND p.post_status IN ('publish', 'pending')
             AND pm.meta_key = '_wc_api_mps_needs_light_sync'
             AND pm.meta_value = '1'
             {$exclusion_sql}
