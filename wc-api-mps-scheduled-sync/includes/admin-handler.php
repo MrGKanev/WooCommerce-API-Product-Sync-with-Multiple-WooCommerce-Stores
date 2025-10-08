@@ -49,7 +49,7 @@ function wc_api_mps_scheduled_process_admin_actions()
 
   // NEW: Handle sync all categories
   if (isset($_POST['sync_all_categories']) && check_admin_referer('wc_api_mps_sync_categories')) {
-    $result = wc_api_mps_sync_all_categories();
+    $result = wc_api_mps_initiate_async_category_sync();
     if ($result['success']) {
       $data['messages'][] = array(
         'type' => 'success',
