@@ -4,7 +4,9 @@
  * Plugin Name: WooCommerce Product Sync - Scheduled Sync
  * Description: Time-based scheduled sync - Light sync (price/qty) during peak hours, full sync during off-peak (12AM-6:30AM)
  * Version: 1.1.0
- * Author: Your Name
+ * Author: MGKNeT.com
+ * Author URI: https://mgknet.com
+ * Text Domain: wc-api-mps-scheduled
  * Requires: WooCommerce API Product Sync plugin
  */
 
