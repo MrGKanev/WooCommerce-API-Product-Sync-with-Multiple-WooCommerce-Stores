@@ -431,6 +431,83 @@ function wc_api_mps_scheduled_admin_page()
       <?php endif; ?>
     </div>
 
+    <div class="wc-api-mps-section">
+      <h2 class="wc-api-mps-section-title">
+        🏷️ <?php _e('Category Sync', 'wc-api-mps-scheduled'); ?>
+      </h2>
+
+      <div class="wc-api-mps-section-content">
+        <div class="wc-api-mps-info-box">
+          <p>
+            <?php _e('Sync all product categories to destination stores, or force update category assignments on existing products.', 'wc-api-mps-scheduled'); ?>
+          </p>
+        </div>
+
+        <!-- Category Statistics -->
+        <div class="wc-api-mps-category-stats">
+          <div class="wc-api-mps-stat-item">
+            <div class="wc-api-mps-stat-value"><?php echo number_format($category_stats['total']); ?></div>
+            <div class="wc-api-mps-stat-label"><?php _e('Total Categories', 'wc-api-mps-scheduled'); ?></div>
+          </div>
+          <div class="wc-api-mps-stat-item">
+            <div class="wc-api-mps-stat-value" style="color: #46b450;"><?php echo number_format($category_stats['synced']); ?></div>
+            <div class="wc-api-mps-stat-label"><?php _e('Synced', 'wc-api-mps-scheduled'); ?></div>
+          </div>
+          <div class="wc-api-mps-stat-item">
+            <div class="wc-api-mps-stat-value" style="color: #dc3232;"><?php echo number_format($category_stats['unsynced']); ?></div>
+            <div class="wc-api-mps-stat-label"><?php _e('Unsynced', 'wc-api-mps-scheduled'); ?></div>
+          </div>
+        </div>
+
+        <!-- Category Sync Actions -->
+        <div class="wc-api-mps-category-actions">
+          <div class="wc-api-mps-action-group">
+            <form method="post">
+              <?php wp_nonce_field('wc_api_mps_sync_categories'); ?>
+              <button type="submit"
+                name="sync_all_categories"
+                class="button button-primary"
+                onclick="return confirm('<?php esc_attr_e('This will sync all product categories to selected destination stores. This may take a few minutes. Continue?', 'wc-api-mps-scheduled'); ?>');">
+                <span class="dashicons dashicons-category" style="margin-top: 3px;"></span>
+                <?php _e('Sync All Categories', 'wc-api-mps-scheduled'); ?>
+              </button>
+            </form>
+            <p class="description">
+              <?php _e('Syncs all product categories (including parent/child relationships and images) to destination stores.', 'wc-api-mps-scheduled'); ?>
+            </p>
+          </div>
+
+          <div class="wc-api-mps-action-group">
+            <form method="post">
+              <?php wp_nonce_field('wc_api_mps_update_product_cats'); ?>
+              <button type="submit"
+                name="force_update_product_categories"
+                class="button button-secondary"
+                onclick="return confirm('<?php esc_attr_e('This will update ONLY the category assignments on all synced products. No other product data will be changed. Continue?', 'wc-api-mps-scheduled'); ?>');">
+                <span class="dashicons dashicons-update" style="margin-top: 3px;"></span>
+                <?php _e('Force Update Product Categories', 'wc-api-mps-scheduled'); ?>
+              </button>
+            </form>
+            <p class="description">
+              <?php _e('Updates only category assignments on existing synced products (does not change prices, stock, descriptions, etc).', 'wc-api-mps-scheduled'); ?>
+            </p>
+          </div>
+        </div>
+
+        <!-- Important Notes -->
+        <div class="wc-api-mps-info-box" style="background: #fff3cd; border-left-color: #ffc107;">
+          <h4 style="margin-top: 0;">⚠️ <?php _e('Important Notes:', 'wc-api-mps-scheduled'); ?></h4>
+          <ul style="margin: 10px 0 0 20px;">
+            <li><?php _e('Categories are automatically synced when products are synced (during regular sync).', 'wc-api-mps-scheduled'); ?></li>
+            <li><?php _e('Use "Sync All Categories" to pre-sync categories before syncing products, or to update all category data.', 'wc-api-mps-scheduled'); ?></li>
+            <li><?php _e('Use "Force Update Product Categories" if you\'ve added/removed categories from products and want to update destinations immediately.', 'wc-api-mps-scheduled'); ?></li>
+            <li><?php _e('Category exclusions (configured in store settings) are respected during sync.', 'wc-api-mps-scheduled'); ?></li>
+            <li><?php _e('Parent-child category relationships are preserved.', 'wc-api-mps-scheduled'); ?></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings Section -->
     <div class="wc-api-mps-card">
       <h2>
