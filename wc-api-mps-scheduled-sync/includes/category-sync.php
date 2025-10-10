@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Async Category Sync Functions
- * Uses WordPress actions for background processing
+ * Category Sync Functions
+ * Handles syncing categories and updating product category assignments
  */
 
 if (!defined('ABSPATH')) {
@@ -10,154 +10,9 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Register background processing hooks
+ * Sync all categories to selected destination stores
  */
-add_action('wc_api_mps_async_sync_categories', 'wc_api_mps_async_sync_categories_handler');
-add_action('wc_api_mps_async_update_product_categories', 'wc_api_mps_async_update_product_categories_handler');
-
-/**
- * Initiate async category sync
- */
-function wc_api_mps_initiate_async_category_sync()
-{
-  // Store start time
-  update_option('wc_api_mps_category_sync_started', time());
-  update_option('wc_api_mps_category_sync_status', 'running');
-  delete_option('wc_api_mps_category_sync_result');
-
-  wc_api_mps_scheduled_log('Category sync initiated (background process)');
-
-  // Schedule immediate action
-  if (!wp_next_scheduled('wc_api_mps_async_sync_categories')) {
-    wp_schedule_single_event(time(), 'wc_api_mps_async_sync_categories');
-  }
-
-  return array(
-    'success' => true,
-    'message' => __('Category sync started in background. Refresh page in 1-2 minutes to see results.', 'wc-api-mps-scheduled')
-  );
-}
-
-/**
- * Background handler for category sync
- */
-function wc_api_mps_async_sync_categories_handler()
-{
-  // Prevent timeout
-  @set_time_limit(0);
-
-  wc_api_mps_scheduled_log('Background category sync processing started');
-
-  // Run the actual sync
-  $result = wc_api_mps_sync_all_categories_internal();
-
-  // Store result
-  update_option('wc_api_mps_category_sync_result', $result);
-  update_option('wc_api_mps_category_sync_status', 'completed');
-  update_option('wc_api_mps_category_sync_completed', time());
-
-  wc_api_mps_scheduled_log(sprintf(
-    'Background category sync completed: %d synced, %d errors',
-    $result['success_count'],
-    $result['error_count']
-  ));
-}
-
-/**
- * Initiate async product category update
- */
-function wc_api_mps_initiate_async_product_category_update()
-{
-  // Store start time
-  update_option('wc_api_mps_product_cat_update_started', time());
-  update_option('wc_api_mps_product_cat_update_status', 'running');
-  delete_option('wc_api_mps_product_cat_update_result');
-
-  wc_api_mps_scheduled_log('Product category update initiated (background process)');
-
-  // Schedule immediate action
-  if (!wp_next_scheduled('wc_api_mps_async_update_product_categories')) {
-    wp_schedule_single_event(time(), 'wc_api_mps_async_update_product_categories');
-  }
-
-  return array(
-    'success' => true,
-    'message' => __('Product category update started in background. Refresh page in 1-2 minutes to see results.', 'wc-api-mps-scheduled')
-  );
-}
-
-/**
- * Background handler for product category update
- */
-function wc_api_mps_async_update_product_categories_handler()
-{
-  // Prevent timeout
-  @set_time_limit(0);
-
-  wc_api_mps_scheduled_log('Background product category update processing started');
-
-  // Run the actual update
-  $result = wc_api_mps_force_update_product_categories_internal();
-
-  // Store result
-  update_option('wc_api_mps_product_cat_update_result', $result);
-  update_option('wc_api_mps_product_cat_update_status', 'completed');
-  update_option('wc_api_mps_product_cat_update_completed', time());
-
-  wc_api_mps_scheduled_log(sprintf(
-    'Background product category update completed: %d updated, %d errors',
-    $result['success_count'],
-    $result['error_count']
-  ));
-}
-
-/**
- * Get category sync status
- */
-function wc_api_mps_get_category_sync_status()
-{
-  $status = get_option('wc_api_mps_category_sync_status', 'idle');
-  $started = get_option('wc_api_mps_category_sync_started', 0);
-  $completed = get_option('wc_api_mps_category_sync_completed', 0);
-  $result = get_option('wc_api_mps_category_sync_result', null);
-
-  $data = array(
-    'status' => $status,
-    'started' => $started,
-    'completed' => $completed,
-    'result' => $result,
-    'elapsed' => $started ? (time() - $started) : 0
-  );
-
-  return $data;
-}
-
-/**
- * Get product category update status
- */
-function wc_api_mps_get_product_cat_update_status()
-{
-  $status = get_option('wc_api_mps_product_cat_update_status', 'idle');
-  $started = get_option('wc_api_mps_product_cat_update_started', 0);
-  $completed = get_option('wc_api_mps_product_cat_update_completed', 0);
-  $result = get_option('wc_api_mps_product_cat_update_result', null);
-
-  $data = array(
-    'status' => $status,
-    'started' => $started,
-    'completed' => $completed,
-    'result' => $result,
-    'elapsed' => $started ? (time() - $started) : 0
-  );
-
-  return $data;
-}
-
-/**
- * Internal sync function (renamed from original)
- * This is called by the background handler
- */
-function wc_api_mps_sync_all_categories_internal()
+function wc_api_mps_sync_all_categories()
 {
   if (!function_exists('wc_api_mps_destination_category_id')) {
     return array(
@@ -166,9 +21,11 @@ function wc_api_mps_sync_all_categories_internal()
     );
   }
 
+  // Get selected stores
   $selected_store_urls = get_option('wc_api_mps_cron_selected_stores', array());
   $all_stores = get_option('wc_api_mps_stores', array());
 
+  // Filter to only selected stores
   $stores = array();
   foreach ($selected_store_urls as $store_url) {
     if (isset($all_stores[$store_url]) && $all_stores[$store_url]['status']) {
@@ -183,6 +40,7 @@ function wc_api_mps_sync_all_categories_internal()
     );
   }
 
+  // Get all product categories
   $categories = get_terms(array(
     'taxonomy' => 'product_cat',
     'hide_empty' => false,
@@ -207,6 +65,7 @@ function wc_api_mps_sync_all_categories_internal()
   $error_count = 0;
   $store_results = array();
 
+  // Process each store
   foreach ($stores as $store_url => $store_data) {
     require_once WC_API_MPS_PLUGIN_PATH . 'includes/class-api.php';
     $api = new WC_API_MPS(
@@ -219,10 +78,13 @@ function wc_api_mps_sync_all_categories_internal()
     $store_errors = 0;
     $store_skipped = 0;
 
+    // Get excluded categories for this store
     $exclude_categories = isset($store_data['exclude_categories_products']) ? $store_data['exclude_categories_products'] : array();
 
+    // Sync each category
     foreach ($categories as $category) {
       try {
+        // Skip excluded categories for this store
         if (in_array($category->term_id, $exclude_categories)) {
           $store_skipped++;
           wc_api_mps_scheduled_log(sprintf(
@@ -235,6 +97,7 @@ function wc_api_mps_sync_all_categories_internal()
 
         $exclude_term_description = isset($store_data['exclude_term_description']) ? $store_data['exclude_term_description'] : 0;
 
+        // Use existing function to sync category
         $destination_cat_id = wc_api_mps_destination_category_id(
           $api,
           $store_url,
@@ -250,7 +113,8 @@ function wc_api_mps_sync_all_categories_internal()
           $error_count++;
         }
 
-        usleep(100000);
+        // Small delay to prevent overload
+        usleep(100000); // 0.1 seconds
       } catch (Exception $e) {
         $store_errors++;
         $error_count++;
@@ -296,39 +160,10 @@ function wc_api_mps_sync_all_categories_internal()
 }
 
 /**
- * Get category sync statistics
+ * Force update product categories only (no other product data)
+ * Updates category assignments on all products that have been synced
  */
-function wc_api_mps_get_category_stats()
-{
-  $categories = get_terms(array(
-    'taxonomy' => 'product_cat',
-    'hide_empty' => false,
-  ));
-
-  $total_categories = is_array($categories) ? count($categories) : 0;
-
-  // Count synced categories
-  $synced_count = 0;
-  if (is_array($categories)) {
-    foreach ($categories as $category) {
-      $mpsrel = get_term_meta($category->term_id, 'mpsrel', true);
-      if (is_array($mpsrel) && !empty($mpsrel)) {
-        $synced_count++;
-      }
-    }
-  }
-
-  return array(
-    'total' => $total_categories,
-    'synced' => $synced_count,
-    'unsynced' => $total_categories - $synced_count
-  );
-}
-
-/**
- * Internal product category update function
- */
-function wc_api_mps_force_update_product_categories_internal()
+function wc_api_mps_force_update_product_categories()
 {
   if (!function_exists('wc_api_mps_destination_category_id')) {
     return array(
@@ -337,9 +172,11 @@ function wc_api_mps_force_update_product_categories_internal()
     );
   }
 
+  // Get selected stores
   $selected_store_urls = get_option('wc_api_mps_cron_selected_stores', array());
   $all_stores = get_option('wc_api_mps_stores', array());
 
+  // Filter to only selected stores
   $stores = array();
   foreach ($selected_store_urls as $store_url) {
     if (isset($all_stores[$store_url]) && $all_stores[$store_url]['status']) {
@@ -354,6 +191,7 @@ function wc_api_mps_force_update_product_categories_internal()
     );
   }
 
+  // Get all products that have been synced (have mpsrel meta)
   $args = array(
     'post_type' => 'product',
     'posts_per_page' => -1,
@@ -386,6 +224,7 @@ function wc_api_mps_force_update_product_categories_internal()
   $error_count = 0;
   $store_results = array();
 
+  // Process each store
   foreach ($stores as $store_url => $store_data) {
     require_once WC_API_MPS_PLUGIN_PATH . 'includes/class-api.php';
     $api = new WC_API_MPS(
@@ -400,16 +239,19 @@ function wc_api_mps_force_update_product_categories_internal()
     $exclude_categories = isset($store_data['exclude_categories_products']) ? $store_data['exclude_categories_products'] : array();
     $exclude_term_description = isset($store_data['exclude_term_description']) ? $store_data['exclude_term_description'] : 0;
 
+    // Process each product
     foreach ($product_ids as $product_id) {
       try {
         $mpsrel = get_post_meta($product_id, 'mpsrel', true);
 
+        // Skip if product not synced to this store
         if (!is_array($mpsrel) || !isset($mpsrel[$store_url])) {
           continue;
         }
 
         $destination_product_id = $mpsrel[$store_url];
 
+        // Get product categories
         $product = wc_get_product($product_id);
         if (!$product) {
           continue;
@@ -421,12 +263,15 @@ function wc_api_mps_force_update_product_categories_internal()
           continue;
         }
 
+        // Build category array for destination
         $destination_categories = array();
         foreach ($category_ids as $category_id) {
+          // Skip excluded categories
           if (in_array($category_id, $exclude_categories)) {
             continue;
           }
 
+          // Get/create destination category ID
           $dest_cat_id = wc_api_mps_destination_category_id(
             $api,
             $store_url,
@@ -439,10 +284,12 @@ function wc_api_mps_force_update_product_categories_internal()
           }
         }
 
+        // Skip if no categories to update
         if (empty($destination_categories)) {
           continue;
         }
 
+        // Update ONLY categories on destination product
         $update_data = array(
           'categories' => $destination_categories
         );
@@ -457,7 +304,8 @@ function wc_api_mps_force_update_product_categories_internal()
           $error_count++;
         }
 
-        usleep(50000);
+        // Small delay to prevent overload
+        usleep(50000); // 0.05 seconds
       } catch (Exception $e) {
         $store_errors++;
         $error_count++;
@@ -501,5 +349,35 @@ function wc_api_mps_force_update_product_categories_internal()
     'success_count' => $success_count,
     'error_count' => $error_count,
     'store_results' => $store_results
+  );
+}
+
+/**
+ * Get category sync statistics
+ */
+function wc_api_mps_get_category_stats()
+{
+  $categories = get_terms(array(
+    'taxonomy' => 'product_cat',
+    'hide_empty' => false,
+  ));
+
+  $total_categories = is_array($categories) ? count($categories) : 0;
+
+  // Count synced categories
+  $synced_count = 0;
+  if (is_array($categories)) {
+    foreach ($categories as $category) {
+      $mpsrel = get_term_meta($category->term_id, 'mpsrel', true);
+      if (is_array($mpsrel) && !empty($mpsrel)) {
+        $synced_count++;
+      }
+    }
+  }
+
+  return array(
+    'total' => $total_categories,
+    'synced' => $synced_count,
+    'unsynced' => $total_categories - $synced_count
   );
 }
