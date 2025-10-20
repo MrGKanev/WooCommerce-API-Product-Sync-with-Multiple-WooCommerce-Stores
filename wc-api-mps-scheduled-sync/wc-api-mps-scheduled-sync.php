@@ -59,14 +59,14 @@ function wc_api_mps_scheduled_enqueue_assets($hook)
 
   wp_enqueue_style(
     'wc-api-mps-scheduled-admin',
-    WC_API_MPS_SCHEDULED_URL . 'includes/admin-styles.css',
+    WC_API_MPS_SCHEDULED_URL . 'assets/css/admin-styles.css',
     array(),
     WC_API_MPS_SCHEDULED_VERSION
   );
 
   wp_enqueue_script(
     'wc-api-mps-scheduled-admin',
-    WC_API_MPS_SCHEDULED_URL . 'includes/admin-scripts.js',
+    WC_API_MPS_SCHEDULED_URL . 'assets/js/admin-scripts.js',
     array('jquery'),
     WC_API_MPS_SCHEDULED_VERSION,
     true
