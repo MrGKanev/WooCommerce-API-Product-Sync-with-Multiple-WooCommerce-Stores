@@ -2,7 +2,7 @@
 
 /**
  * WordPress hooks for tracking product changes
- * Modified to support pending products (1:1 status sync)
+ * Modified to use queue system instead of immediate sync
  */
 
 if (!defined('ABSPATH')) {
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 /**
  * Mark products for full sync when created/updated
- * Now works for both publish and pending products
+ * Works for both publish and pending products
  */
 add_action('woocommerce_update_product', 'wc_api_mps_scheduled_mark_full_sync', 10, 1);
 add_action('woocommerce_new_product', 'wc_api_mps_scheduled_mark_full_sync', 10, 1);
@@ -55,27 +55,54 @@ function wc_api_mps_scheduled_mark_light_sync($product)
 }
 
 /**
- * Auto sync products when order status changes to processing or completed
- * (Orders typically only contain published products, but keeping consistent)
+ * Queue products when order status changes to processing or completed
+ * MODIFIED: No longer syncs immediately, adds to queue instead
  */
-add_action('woocommerce_order_status_processing', 'wc_api_mps_scheduled_order_status_sync', 10, 1);
-add_action('woocommerce_order_status_completed', 'wc_api_mps_scheduled_order_status_sync', 10, 1);
+add_action('woocommerce_order_status_processing', 'wc_api_mps_scheduled_queue_order_products', 10, 1);
+add_action('woocommerce_order_status_completed', 'wc_api_mps_scheduled_queue_order_products', 10, 1);
 
-function wc_api_mps_scheduled_order_status_sync($order_id)
+function wc_api_mps_scheduled_queue_order_products($order_id)
 {
   // Check if auto sync is enabled
   if (!get_option('wc_api_mps_auto_sync_orders', 0)) {
     return;
   }
 
-  // Schedule a one-time cron event to run in 1 minute
-  if (!wp_next_scheduled('wc_api_mps_order_sync_event', array($order_id))) {
-    wp_schedule_single_event(time() + 60, 'wc_api_mps_order_sync_event', array($order_id));
+  $order = wc_get_order($order_id);
+  if (!$order) {
+    return;
   }
+
+  // Collect products from this order
+  $product_ids = array();
+  foreach ($order->get_items() as $item) {
+    $product_id = $item->get_product_id();
+    if ($product_id) {
+      $product_ids[] = $product_id;
+    }
+
+    $variation_id = $item->get_variation_id();
+    if ($variation_id) {
+      $product_ids[] = $variation_id;
+    }
+  }
+
+  if (empty($product_ids)) {
+    return;
+  }
+
+  // Add products to queue instead of syncing immediately
+  wc_api_mps_queue_add_products($product_ids, "order_{$order_id}");
+
+  wc_api_mps_scheduled_log(sprintf(
+    'Order #%d: %d product(s) added to sync queue',
+    $order_id,
+    count($product_ids)
+  ));
 }
 
 /**
- * NEW: Track status transitions for pending products
+ * Track status transitions for pending products
  * When pending product changes to publish (or vice versa), trigger immediate sync
  */
 add_action('transition_post_status', 'wc_api_mps_scheduled_track_status_change', 10, 3);
