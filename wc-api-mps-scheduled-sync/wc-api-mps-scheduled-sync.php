@@ -85,6 +85,9 @@ add_action('wc_api_mps_verify_orders', 'wc_api_mps_verify_last_orders_sync');
 // Register Action Scheduler hook for force sync
 add_action('wc_api_mps_force_sync_product', 'wc_api_mps_process_force_sync_product', 10, 2);
 
+// Register Action Scheduler hook for SKU-based sync
+add_action('wc_api_mps_process_sku_sync', 'wc_api_mps_process_sku_sync', 10, 3);
+
 // Always register the custom intervals (not just on activation)
 add_filter('cron_schedules', 'wc_api_mps_scheduled_add_interval');
 

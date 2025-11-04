@@ -390,25 +390,29 @@ function wc_api_mps_scheduled_admin_page()
         <div style="margin-top: 1.43rem;">
           <h3><?php _e('Sync Results', 'wc-api-mps-scheduled'); ?></h3>
 
-          <?php if (!empty($sku_sync_result['synced'])): ?>
+          <?php if ($sku_sync_result['success'] && $sku_sync_result['queued_count'] > 0): ?>
             <div class="wc-api-mps-notice success">
-              <span class="wc-api-mps-icon success">SUCCESS</span>
+              <span class="wc-api-mps-icon success">QUEUED</span>
               <div>
-                <strong><?php _e('Successfully Synced:', 'wc-api-mps-scheduled'); ?></strong>
-                <ul style="margin: 0.36rem 0 0 1.43rem;">
-                  <?php foreach ($sku_sync_result['synced'] as $item): ?>
-                    <li><?php echo esc_html($item['sku']); ?> (ID: <?php echo esc_html($item['id']); ?>) - <?php echo esc_html($item['stores']); ?> store(s)</li>
-                  <?php endforeach; ?>
-                </ul>
+                <strong><?php _e('Products Queued for Background Sync:', 'wc-api-mps-scheduled'); ?></strong>
+                <p style="margin: 0.36rem 0 0 0;">
+                  <?php echo sprintf(__('%d product(s) have been queued for background processing.', 'wc-api-mps-scheduled'), $sku_sync_result['queued_count']); ?>
+                </p>
+                <p style="margin: 0.36rem 0 0 0;">
+                  <?php _e('Go to <strong>WooCommerce > Status > Scheduled Actions</strong> to monitor progress.', 'wc-api-mps-scheduled'); ?>
+                </p>
+                <p style="margin: 0.36rem 0 0 0;">
+                  <em><?php _e('The sync will process in the background. You can close this page safely.', 'wc-api-mps-scheduled'); ?></em>
+                </p>
               </div>
             </div>
           <?php endif; ?>
 
           <?php if (!empty($sku_sync_result['not_found'])): ?>
             <div class="wc-api-mps-notice error">
-              <span class="wc-api-mps-icon error">ERROR</span>
+              <span class="wc-api-mps-icon error">WARNING</span>
               <div>
-                <strong><?php _e('SKUs Not Found:', 'wc-api-mps-scheduled'); ?></strong>
+                <strong><?php _e('SKUs Not Found or Not Published:', 'wc-api-mps-scheduled'); ?></strong>
                 <ul style="margin: 0.36rem 0 0 1.43rem;">
                   <?php foreach ($sku_sync_result['not_found'] as $sku): ?>
                     <li><?php echo esc_html($sku); ?></li>
@@ -422,10 +426,10 @@ function wc_api_mps_scheduled_admin_page()
             <div class="wc-api-mps-notice error">
               <span class="wc-api-mps-icon error">ERROR</span>
               <div>
-                <strong><?php _e('Sync Errors:', 'wc-api-mps-scheduled'); ?></strong>
+                <strong><?php _e('Configuration Errors:', 'wc-api-mps-scheduled'); ?></strong>
                 <ul style="margin: 0.36rem 0 0 1.43rem;">
                   <?php foreach ($sku_sync_result['errors'] as $item): ?>
-                    <li><?php echo esc_html($item['sku']); ?> (ID: <?php echo esc_html($item['id']); ?>) - <?php echo esc_html($item['error']); ?></li>
+                    <li><?php echo esc_html($item['error']); ?></li>
                   <?php endforeach; ?>
                 </ul>
               </div>
