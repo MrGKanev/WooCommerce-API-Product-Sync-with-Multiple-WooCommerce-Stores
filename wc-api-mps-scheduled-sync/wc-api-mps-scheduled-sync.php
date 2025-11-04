@@ -35,6 +35,7 @@ require_once WC_API_MPS_SCHEDULED_PATH . 'includes/debug-helper.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/order-sync.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/action-scheduler-handler.php';
 require_once WC_API_MPS_SCHEDULED_PATH . 'includes/queue-manager.php'; // NEW: Queue system
+require_once WC_API_MPS_SCHEDULED_PATH . 'includes/product-defaults.php'; // Ensures required fields for product creation
 
 // Register activation/deactivation
 register_activation_hook(__FILE__, 'wc_api_mps_scheduled_activate');
