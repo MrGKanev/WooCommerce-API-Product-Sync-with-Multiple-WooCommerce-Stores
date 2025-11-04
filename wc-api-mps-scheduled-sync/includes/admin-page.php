@@ -352,6 +352,89 @@ function wc_api_mps_scheduled_admin_page()
 
     </div><!-- Close main-grid -->
 
+    <!-- SKU-Based Full Product Sync Section (Full Width) -->
+    <div class="wc-api-mps-card">
+      <h2><?php _e('Update Products by SKU', 'wc-api-mps-scheduled'); ?></h2>
+
+      <p class="description">
+        <?php _e('Trigger a full product sync for specific SKUs. Enter one or multiple SKUs (comma or line-separated). Products will be matched on remote stores by SKU and fully updated.', 'wc-api-mps-scheduled'); ?>
+      </p>
+
+      <form method="post">
+        <?php wp_nonce_field('wc_api_mps_sku_sync'); ?>
+
+        <div class="wc-api-mps-settings-row">
+          <div class="wc-api-mps-settings-label">
+            <?php _e('SKU(s)', 'wc-api-mps-scheduled'); ?>
+          </div>
+          <div class="wc-api-mps-settings-input">
+            <textarea
+              name="sku_list"
+              rows="5"
+              style="width: 100%; max-width: 600px;"
+              placeholder="<?php esc_attr_e('Enter SKUs (comma or line-separated, e.g., SKU-001, SKU-002 or one per line)', 'wc-api-mps-scheduled'); ?>"><?php echo isset($_POST['sku_list']) ? esc_textarea($_POST['sku_list']) : ''; ?></textarea>
+            <span class="wc-api-mps-settings-help">
+              <?php _e('Examples: "SKU-001, SKU-002, SKU-003" or one SKU per line', 'wc-api-mps-scheduled'); ?>
+            </span>
+          </div>
+        </div>
+
+        <div class="wc-api-mps-actions">
+          <button type="submit" name="sync_by_sku" class="button button-primary">
+            <?php _e('Sync Selected SKUs', 'wc-api-mps-scheduled'); ?>
+          </button>
+        </div>
+      </form>
+
+      <?php if (isset($sku_sync_result) && !empty($sku_sync_result)): ?>
+        <div style="margin-top: 1.43rem;">
+          <h3><?php _e('Sync Results', 'wc-api-mps-scheduled'); ?></h3>
+
+          <?php if (!empty($sku_sync_result['synced'])): ?>
+            <div class="wc-api-mps-notice success">
+              <span class="wc-api-mps-icon success">SUCCESS</span>
+              <div>
+                <strong><?php _e('Successfully Synced:', 'wc-api-mps-scheduled'); ?></strong>
+                <ul style="margin: 0.36rem 0 0 1.43rem;">
+                  <?php foreach ($sku_sync_result['synced'] as $item): ?>
+                    <li><?php echo esc_html($item['sku']); ?> (ID: <?php echo esc_html($item['id']); ?>) - <?php echo esc_html($item['stores']); ?> store(s)</li>
+                  <?php endforeach; ?>
+                </ul>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <?php if (!empty($sku_sync_result['not_found'])): ?>
+            <div class="wc-api-mps-notice error">
+              <span class="wc-api-mps-icon error">ERROR</span>
+              <div>
+                <strong><?php _e('SKUs Not Found:', 'wc-api-mps-scheduled'); ?></strong>
+                <ul style="margin: 0.36rem 0 0 1.43rem;">
+                  <?php foreach ($sku_sync_result['not_found'] as $sku): ?>
+                    <li><?php echo esc_html($sku); ?></li>
+                  <?php endforeach; ?>
+                </ul>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <?php if (!empty($sku_sync_result['errors'])): ?>
+            <div class="wc-api-mps-notice error">
+              <span class="wc-api-mps-icon error">ERROR</span>
+              <div>
+                <strong><?php _e('Sync Errors:', 'wc-api-mps-scheduled'); ?></strong>
+                <ul style="margin: 0.36rem 0 0 1.43rem;">
+                  <?php foreach ($sku_sync_result['errors'] as $item): ?>
+                    <li><?php echo esc_html($item['sku']); ?> (ID: <?php echo esc_html($item['id']); ?>) - <?php echo esc_html($item['error']); ?></li>
+                  <?php endforeach; ?>
+                </ul>
+              </div>
+            </div>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
+    </div>
+
     <!-- Settings Section (Full Width) -->
     <div class="wc-api-mps-card">
       <h2><?php _e('Settings', 'wc-api-mps-scheduled'); ?></h2>

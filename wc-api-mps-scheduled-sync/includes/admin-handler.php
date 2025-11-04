@@ -153,6 +153,42 @@ function wc_api_mps_scheduled_process_admin_actions()
     $data['order_sync_data'] = wc_api_mps_check_order_sync_status();
   }
 
+  // Handle SKU-based sync
+  if (isset($_POST['sync_by_sku']) && check_admin_referer('wc_api_mps_sku_sync')) {
+    $result = wc_api_mps_sync_by_sku($_POST['sku_list']);
+    $data['sku_sync_result'] = $result;
+
+    if (!empty($result['synced'])) {
+      $data['messages'][] = array(
+        'type' => 'success',
+        'text' => sprintf(
+          __('SKU sync completed: %d product(s) synced successfully', 'wc-api-mps-scheduled'),
+          count($result['synced'])
+        )
+      );
+    }
+
+    if (!empty($result['not_found'])) {
+      $data['messages'][] = array(
+        'type' => 'error',
+        'text' => sprintf(
+          __('%d SKU(s) not found in your store', 'wc-api-mps-scheduled'),
+          count($result['not_found'])
+        )
+      );
+    }
+
+    if (!empty($result['errors'])) {
+      $data['messages'][] = array(
+        'type' => 'error',
+        'text' => sprintf(
+          __('%d product(s) failed to sync', 'wc-api-mps-scheduled'),
+          count($result['errors'])
+        )
+      );
+    }
+  }
+
   // Get current data
   $data['all_stores'] = get_option('wc_api_mps_stores', array());
   $data['cron_status'] = wc_api_mps_scheduled_get_cron_status();
@@ -295,7 +331,7 @@ function wc_api_mps_force_sync_last_orders()
 
 /**
  * Check order sync status
- * 
+ *
  * @return array Order sync status data
  */
 function wc_api_mps_check_order_sync_status()
@@ -312,4 +348,158 @@ function wc_api_mps_check_order_sync_status()
     'order_count' => 0,
     'product_count' => 0,
   );
+}
+
+/**
+ * Sync products by SKU
+ *
+ * @param string $sku_list Comma or line-separated SKU list
+ * @return array Results with synced, not_found, and errors
+ */
+function wc_api_mps_sync_by_sku($sku_list)
+{
+  $result = array(
+    'synced' => array(),
+    'not_found' => array(),
+    'errors' => array(),
+  );
+
+  // Get selected stores for sync
+  $selected_store_urls = get_option('wc_api_mps_cron_selected_stores', array());
+
+  if (empty($selected_store_urls)) {
+    return array(
+      'synced' => array(),
+      'not_found' => array(),
+      'errors' => array(array('sku' => 'N/A', 'id' => 'N/A', 'error' => __('No stores selected in settings. Please select stores first.', 'wc-api-mps-scheduled'))),
+    );
+  }
+
+  // Get all stores
+  $all_stores = get_option('wc_api_mps_stores', array());
+  $stores = array();
+  foreach ($selected_store_urls as $store_url) {
+    if (isset($all_stores[$store_url]) && $all_stores[$store_url]['status']) {
+      $stores[$store_url] = $all_stores[$store_url];
+    }
+  }
+
+  if (empty($stores)) {
+    return array(
+      'synced' => array(),
+      'not_found' => array(),
+      'errors' => array(array('sku' => 'N/A', 'id' => 'N/A', 'error' => __('No active stores found.', 'wc-api-mps-scheduled'))),
+    );
+  }
+
+  // Parse SKU list (support both comma and line separators)
+  $sku_list = trim($sku_list);
+  if (empty($sku_list)) {
+    return $result;
+  }
+
+  // Replace newlines with commas and split
+  $sku_list = str_replace(array("\r\n", "\r", "\n"), ',', $sku_list);
+  $skus = array_map('trim', explode(',', $sku_list));
+  $skus = array_filter($skus); // Remove empty values
+  $skus = array_unique($skus); // Remove duplicates
+
+  if (empty($skus)) {
+    return $result;
+  }
+
+  wc_api_mps_scheduled_log(sprintf(
+    'SKU-based sync initiated: %d SKU(s) to sync to %d store(s)',
+    count($skus),
+    count($stores)
+  ));
+
+  // Process each SKU
+  foreach ($skus as $sku) {
+    // Find product by SKU
+    global $wpdb;
+    $product_id = $wpdb->get_var(
+      $wpdb->prepare(
+        "SELECT post_id FROM {$wpdb->postmeta}
+        WHERE meta_key = '_sku'
+        AND meta_value = %s
+        LIMIT 1",
+        $sku
+      )
+    );
+
+    if (!$product_id) {
+      $result['not_found'][] = $sku;
+      wc_api_mps_scheduled_log(sprintf('SKU not found: %s', $sku));
+      continue;
+    }
+
+    // Verify product exists and is published
+    $product = wc_get_product($product_id);
+    if (!$product || $product->get_status() !== 'publish') {
+      $result['not_found'][] = $sku;
+      wc_api_mps_scheduled_log(sprintf('SKU %s found but product is not published (ID: %d)', $sku, $product_id));
+      continue;
+    }
+
+    // Sync product with full_product type
+    try {
+      wc_api_mps_integration($product_id, $stores, 'full_product');
+
+      // Update sync metadata
+      update_post_meta($product_id, '_wc_api_mps_last_sync', time());
+      update_post_meta($product_id, '_wc_api_mps_last_sync_type', 'full_product');
+      update_post_meta($product_id, '_wc_api_mps_needs_sync', 0);
+      update_post_meta($product_id, '_wc_api_mps_needs_full_sync', 0);
+      update_post_meta($product_id, '_wc_api_mps_needs_light_sync', 0);
+
+      $result['synced'][] = array(
+        'sku' => $sku,
+        'id' => $product_id,
+        'stores' => count($stores)
+      );
+
+      wc_api_mps_scheduled_log(sprintf('✓ SKU %s (ID: %d) synced successfully to %d store(s)', $sku, $product_id, count($stores)));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $sku,
+        $product_id,
+        'full_product',
+        array_keys($stores),
+        true
+      );
+
+      // Small delay to prevent overwhelming the server
+      usleep(100000); // 0.1 second
+    } catch (Exception $e) {
+      $error_msg = $e->getMessage();
+      $result['errors'][] = array(
+        'sku' => $sku,
+        'id' => $product_id,
+        'error' => $error_msg
+      );
+
+      wc_api_mps_scheduled_log(sprintf('✗ Error syncing SKU %s (ID: %d): %s', $sku, $product_id, $error_msg));
+
+      // Log to SKU-specific file
+      wc_api_mps_log_sku_sync(
+        $sku,
+        $product_id,
+        'full_product',
+        array_keys($stores),
+        false,
+        $error_msg
+      );
+    }
+  }
+
+  wc_api_mps_scheduled_log(sprintf(
+    'SKU-based sync completed: %d synced, %d not found, %d errors',
+    count($result['synced']),
+    count($result['not_found']),
+    count($result['errors'])
+  ));
+
+  return $result;
 }
